@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>ChemDisk – Forms Embed</title>
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="color-scheme" content="dark light" />
+  <style>
+    :root{
+      /* lekko zielone tło */
+      --bg: #143a23;
+      --fg: #e5e7eb;
+      --muted: #9aa0a6;
+      --card: #16251c;
+      --radius: 16px;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    *{ box-sizing: border-box; }
+    html,body{ height:100%; margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; overflow:hidden; }
+    body{ min-height:100dvh; }
+    .stage{ position:fixed; inset:0; display:grid; }
+    /* Docelowy iframe – ukryty do czasu „gotowe” */
+    iframe#form{
+      width:100vw; height:100dvh; border:0; display:block;
+      background:#0e2619; /* delikatna zieleń zanim formularz się narysuje */
+      z-index:1; visibility:hidden;
+    }
+    .stage.ready iframe#form{ visibility:visible; }
+
+    /* Loader */
+    #loader{
+      position:fixed; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.75);
+      backdrop-filter: blur(2px); z-index:3;
+    }
+    #loader[hidden]{ display:none !important; }
+    .loader-card{
+      max-width:560px; width:min(92vw,560px); background:var(--card); border-radius:var(--radius);
+      box-shadow:var(--shadow); padding:20px 22px; text-align:center;
+    }
+    .loader-card b{ font-weight:700; }
+    .loader-card .hint{ color:var(--muted); margin-top:8px; }
+
+    /* Błąd */
+    #error{
+      position:fixed; inset:0; display:none; place-items:center; z-index:4; backdrop-filter: blur(2px);
+    }
+    #error.show{ display:grid; }
+    .error-card{
+      max-width:720px; width:min(92vw,720px); background:var(--card); border-radius:var(--radius);
+      box-shadow:var(--shadow); padding:24px; text-align:center;
+    }
+    code{ background:rgba(255,255,255,.08); padding:2px 6px; border-radius:6px; }
+
+    /* iOS Safari bezpieczne marginesy */
+    @supports (-webkit-touch-callout:none){
+      .stage{ position:absolute; top:env(safe-area-inset-top); right:env(safe-area-inset-right);
+              bottom:env(safe-area-inset-bottom); left:env(safe-area-inset-left); }
+    }
+
+    /* Iframe preloaderów – nigdy nie pokazujemy */
+    .preload-wrap{ position:fixed; inset:auto; width:0; height:0; overflow:hidden; }
+    .preload-wrap iframe{ width:0; height:0; border:0; }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-busy="true">
+    <iframe id="form" title="Osadzony formularz" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe>
+
+    <div id="loader" aria-live="polite">
+      <div class="loader-card">
+        <b>Ładowanie formularza…</b>
+        <div class="hint">To może potrwać chwilę przy wolniejszym łączu</div>
+      </div>
+    </div>
+
+    <div id="error" role="alert" aria-hidden="true">
+      <div class="error-card">
+        <h2>Nieprawidłowe lub brakujące <code>id</code></h2>
+        <p>Użyj: <code>?id=FORM_ID</code> lub wklej pełny link do Google Forms jako <code>id</code>.</p>
+        <p class="hint">Przykład: <code>?id=1FAIpQLSdBldI4mPt-...-V8KhDkQ</code></p>
+      </div>
+    </div>
+
+    <!-- Niewidoczny kontener na iframy-preloadery -->
+    <div class="preload-wrap" aria-hidden="true"></div>
+  </main>
+
+  <script>
+  (() => {
+    const STORAGE_KEY = 'chemdisk_forms_embed_v1';
+    const IFRAME = document.getElementById('form');
+    const LOADER = document.getElementById('loader');
+    const ERROR  = document.getElementById('error');
+    const STAGE  = document.querySelector('main.stage');
+    const PRELOAD_WRAP = document.querySelector('.preload-wrap');
+
+    // ——— Helpers ———
+    function showLoader(text, hint){
+      if (!LOADER) return;
+      const b = LOADER.querySelector('.loader-card b');
+      const h = LOADER.querySelector('.hint');
+      if (b && text) b.textContent = text;
+      if (h && hint) h.textContent = hint;
+      LOADER.hidden = false;
+      STAGE?.setAttribute('aria-busy','true');
+      STAGE?.classList.remove('ready');
+    }
+    function hideLoader(){
+      LOADER.hidden = true;
+      STAGE?.removeAttribute('aria-busy');
+    }
+    function showError(){
+      ERROR.classList.add('show');
+      ERROR.setAttribute('aria-hidden','false');
+    }
+    function hideError(){
+      ERROR.classList.remove('show');
+      ERROR.setAttribute('aria-hidden','true');
+    }
+    function setSrc(url){ IFRAME.src = url; }
+
+    function saveState(raw){ try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(raw)); } catch {} }
+    function loadState(){ try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'{}'); } catch { return {}; } }
+    function clearQuery(){ try { history.replaceState({}, document.title, location.pathname || '/'); } catch {} }
+
+    // ——— Parsowanie wejścia ———
+    function normalizeInput(raw){
+      if (!raw) return null;
+      const s = decodeURIComponent(String(raw).trim());
+      // pełny URL?
+      if (/^https?:\/\//i.test(s)) {
+        try {
+          const u = new URL(s);
+          const isForms = /(^|\.)docs\.google\.com$/i.test(u.hostname) && /\/forms\//i.test(u.pathname);
+          const isShort = /(^|\.)forms\.gle$/i.test(u.hostname);
+          if (!(isForms || isShort)) return null;
+          return { kind:'url', url: s };
+        } catch { return null; }
+      }
+      // samo ID
+      const m = s.match(/[A-Za-z0-9_-]{10,}/);
+      return m ? { kind:'id', id:m[0] } : null;
+    }
+
+    function ensureEmbedded(urlStr){
+      try { const u = new URL(urlStr); u.searchParams.set('embedded','true'); return u.toString(); }
+      catch { return urlStr; }
+    }
+    function buildUrlFromId(id, variant /* 'e' | 'legacy' */){
+      return variant === 'legacy'
+        ? `https://docs.google.com/forms/d/${id}/viewform?embedded=true`
+        : `https://docs.google.com/forms/d/e/${id}/viewform?embedded=true`;
+    }
+    function swapVariant(urlStr){
+      try {
+        const u = new URL(urlStr);
+        if (/\/forms\/d\/e\//i.test(u.pathname)) u.pathname = u.pathname.replace(/\/forms\/d\/e\//i, '/forms/d/');
+        else if (/\/forms\/d\//i.test(u.pathname)) u.pathname = u.pathname.replace(/\/forms\/d\//i, '/forms/d/e/');
+        u.searchParams.set('embedded','true');
+        return u.toString();
+      } catch { return urlStr; }
+    }
+
+    // ——— Preload 2 wariantów i wybór lepszego ———
+    function preloadBothAndChoose(primaryUrl, secondaryUrl, opts){
+      const {
+        MIN_LOADER_MS   = 900,   // minimalny czas loadera
+        GIVEUP_MS       = 8000,  // twardy timeout całego procesu
+        SUSPECT_THRESH  = 400,   // < 400 ms traktujemy jako „podejrzanie szybkie” (często strona błędu)
+        PREFERENCE_GAP  = 200    // jeśli jeden iframe był o ≥200 ms wolniejszy, uznajemy go za bardziej wiarygodny
+      } = opts || {};
+
+      return new Promise((resolve) => {
+        const t0 = performance.now();
+        const results = {
+          primary: { loaded:false, dt:Infinity, url:primaryUrl },
+          secondary: { loaded:false, dt:Infinity, url:secondaryUrl }
+        };
+
+        // Utwórz 2 ukryte iframy-preloadery
+        const ifrPrim = document.createElement('iframe');
+        const ifrSec  = document.createElement('iframe');
+        [ifrPrim, ifrSec].forEach(el => {
+          el.setAttribute('referrerpolicy','strict-origin-when-cross-origin');
+          el.setAttribute('aria-hidden','true');
+          el.loading = 'eager';
+          el.decoding = 'sync';
+        });
+
+        function cleanup(){
+          try { ifrPrim.remove(); } catch {}
+          try { ifrSec.remove(); } catch {}
+        }
+
+        function decideAndResolve(){
+          // heurystyka wyboru:
+          // 1) jeśli któryś ma dt >= SUSPECT_THRESH, preferuj ten; jeżeli oba >=, wybierz wolniejszy (większy dt)
+          // 2) jeżeli różnica >= PREFERENCE_GAP, bierz wolniejszy
+          // 3) inaczej: preferuj primary (stabilniejszy canonical)
+          const p = results.primary, s = results.secondary;
+
+          let candidate = p.url; // domyślnie primary
+          const bothLoaded = p.loaded && s.loaded;
+
+          const pOK = p.dt >= SUSPECT_THRESH;
+          const sOK = s.dt >= SUSPECT_THRESH;
+
+          if (bothLoaded) {
+            if (pOK && !sOK) candidate = p.url;
+            else if (!pOK && sOK) candidate = s.url;
+            else if (pOK && sOK) {
+              candidate = (p.dt > s.dt) ? p.url : s.url; // wolniejszy zwykle „prawdziwy”
+            } else {
+              // żaden nie wygląda super — wybór stabilny: primary
+              candidate = p.url;
+            }
+            // dodatkowa preferencja na większą różnicę
+            if (Math.abs(p.dt - s.dt) >= PREFERENCE_GAP) {
+              candidate = (p.dt > s.dt) ? p.url : s.url;
+            }
+          } else if (p.loaded || s.loaded) {
+            // załadował się tylko jeden – bierz ten, ale jeśli „podejrzanie szybki”, daj jeszcze moment na drugi
+            const sole = p.loaded ? p : s;
+            if (sole.dt < SUSPECT_THRESH) {
+              // damy krótką szansę drugiemu (100ms) zanim potwierdzimy
+              setTimeout(() => resolve(sole.url), 100);
+              cleanup();
+              return;
+            }
+            candidate = sole.url;
+          }
+
+          resolve(candidate);
+          cleanup();
+        }
+
+        function onLoad(which){
+          const dt = performance.now() - t0;
+          results[which].loaded = true;
+          results[which].dt = dt;
+
+          // Jeśli oba już się zameldowały — decyduj od razu
+          if (results.primary.loaded && results.secondary.loaded) {
+            decideAndResolve();
+          }
+        }
+
+        ifrPrim.addEventListener('load', () => onLoad('primary'), { once:true });
+        ifrSec .addEventListener('load', () => onLoad('secondary'), { once:true });
+
+        // start preloadu
+        ifrPrim.src = primaryUrl;
+        ifrSec.src  = secondaryUrl;
+        PRELOAD_WRAP.appendChild(ifrPrim);
+        PRELOAD_WRAP.appendChild(ifrSec);
+
+        // awaryjny timeout – zdecyduj na bazie tego co mamy
+        setTimeout(() => decideAndResolve(), GIVEUP_MS);
+
+      });
+    }
+
+    // ——— Start ———
+    (async function init(){
+      showLoader();
+
+      const qs   = new URLSearchParams(location.search);
+      const keep = (qs.get('keep')||'') === '1';
+
+      // 1) Zczytaj z URL
+      let raw = qs.get('id') || '';
+      // 2) Jeśli jest — zapisz i ukryj query (żeby nie było widać ?id=)
+      if (raw) {
+        saveState({ raw });
+        if (!keep) clearQuery();
+      } else {
+        // 3) Brak w URL? — weź z pamięci
+        const mem = loadState();
+        raw = mem.raw || '';
+      }
+
+      const parsed = normalizeInput(raw);
+      if (!parsed) { hideLoader(); showError(); return; }
+
+      // Wyznacz primary/secondary URL
+      let primaryUrl = '';
+      let secondaryUrl = '';
+      if (parsed.kind === 'url') {
+        primaryUrl   = ensureEmbedded(parsed.url);
+        secondaryUrl = swapVariant(primaryUrl);
+      } else {
+        const id = parsed.id;
+        primaryUrl   = buildUrlFromId(id, 'e');
+        secondaryUrl = buildUrlFromId(id, 'legacy');
+      }
+
+      const MIN_LOADER_MS = 900;
+      const startT = performance.now();
+
+      try {
+        // Preload i wybór „lepszego” wariantu zanim pokażemy użytkownikowi iframe
+        const chosen = await preloadBothAndChoose(primaryUrl, secondaryUrl, { MIN_LOADER_MS });
+
+        // Ustawiamy właściwy src dopiero po wyborze
+        setSrc(chosen);
+
+        // Po realnym „load” docelowego iframe chowamy loader (z minimalnym czasem)
+        IFRAME.addEventListener('load', () => {
+          const dt = performance.now() - startT;
+          const wait = Math.max(0, MIN_LOADER_MS - dt);
+          setTimeout(() => {
+            hideError();
+            hideLoader();
+            STAGE?.classList.add('ready');
+          }, wait);
+        }, { once:true });
+
+      } catch {
+        hideLoader(); showError();
+      }
+
+      // iOS/Safari: jeśli iframe „zgubi” src po powrocie z tła
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !IFRAME.src) setSrc(primaryUrl);
+      });
+    })();
+
+    // ——— Anty-konsolka / utrudnienia ———
+    try {
+      document.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
+      document.addEventListener('keydown', e => {
+        const k = (e.key || '').toLowerCase();
+        if (e.keyCode === 123) return e.preventDefault(); // F12
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i','j','c'].includes(k)) return e.preventDefault();
+        if ((e.ctrlKey || e.metaKey) && ['u','s'].includes(k)) return e.preventDefault();
+      }, { capture:true });
+      // Prosta heurystyka devtools
+      const detect = () => {
+        const wDiff = window.outerWidth - window.innerWidth;
+        const hDiff = window.outerHeight - window.innerHeight;
+        return wDiff > 160 || hDiff > 160;
+      };
+      setInterval(() => {
+        if (detect()) {
+          document.body.innerHTML = '';
+          location.replace('/');
+        }
+      }, 800);
+      // Tłumienie konsoli
+      ['log','info','warn','error','debug'].forEach(m => { try { console[m] = () => {}; } catch {} });
+    } catch {}
+  })();
+  </script>
+</body>
+</html>

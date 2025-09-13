@@ -1,0 +1,40 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# ---- RBAC: dostęp do /members/* mają tylko role "active" i "admin"
+[[redirects]]
+  from = "/members/*"
+  to = "/members/:splat"
+  status = 200
+  force = true
+  conditions = { Role = ["active", "admin"] }
+
+# Fallback dla wszystkich bez wymaganej roli -> /login/ (401)
+[[redirects]]
+  from = "/members/*"
+  to = "/login/"
+  status = 401
+  force = true
+
+# (Opcjonalnie) główna strona ma prowadzić do /login/
+[[redirects]]
+  from = "/"
+  to = "/login/"
+  status = 302
+
+# ---- Nagłówki: zero cache pod /members/* (HTML i reszta)
+[[headers]]
+  for = "/members/*"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, max-age=0"
+    Pragma = "no-cache"
+    Expires = "0"
+
+# (Opcjonalnie) Jeżeli masz CSP – dopuść widget Identity na /login/*
+# Zostaw lub usuń, zależnie czy ustawiasz CSP. Jeśli tak – ta reguła pomaga
+# uniknąć błędu "violates Content Security Policy".
+[[headers]]
+  for = "/login/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://identity.netlify.com; connect-src 'self' https://identity.netlify.com https://api.netlify.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src https://identity.netlify.com;"
