@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Strefa kursanta – logowanie</title>
 
-  <!-- Ważne: widget Netlify Identity + Twoja logika -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
   <script defer src="/assets/js/auth.js"></script>
 
-  <!-- Nie buforuj strony logowania -->
   <meta http-equiv="Cache-Control" content="no-store" />
 
   <style>
@@ -29,7 +27,7 @@
     .helper{font-size:13px;color:#6b7280;margin-top:10px}
     .helper b{color:#111827}
 
-    /* Schowaj rejestrację w modalu Identity (logowanie-only) */
+    /* Ukryj rejestrację w modalu */
     .netlify-identity-modal [data-netlify-identity-button="signup"],
     .netlify-identity-modal .netlify-identity-tab-item[data-tab="signup"],
     .netlify-identity-modal .netlify-identity-view[data-view="signup"]{
@@ -42,7 +40,6 @@
     <h1 id="login-title">Strefa kursanta</h1>
     <p class="muted">Zaloguj się, aby uzyskać dostęp do materiałów.</p>
 
-    <!-- Flash na komunikaty z auth.js (np. konto nieaktywne / wylogowany z innego urządzenia) -->
     <div id="flash" class="flash" aria-live="polite"></div>
 
     <div class="row" style="margin-top:8px">
@@ -58,33 +55,5 @@
       <p class="muted">Do logowania wymagany jest JavaScript.</p>
     </noscript>
   </div>
-
-  <script>
-    // Minimalny skrypt strony (reszta logiki w /assets/js/auth.js)
-    document.addEventListener('DOMContentLoaded', () => {
-      if (typeof netlifyIdentity !== 'undefined') {
-        try { netlifyIdentity.init(); } catch {}
-
-        // Otwórz modal logowania po kliknięciu
-        const btn = document.getElementById('login-btn');
-        btn?.addEventListener('click', (e) => {
-          e.preventDefault();
-          try { netlifyIdentity.open('login'); } catch {}
-        });
-
-        // Dla spójności UX – po zalogowaniu zamknij modal (przekieruje auth.js)
-        netlifyIdentity.on('login', () => {
-          try { netlifyIdentity.close(); } catch {}
-        });
-
-      } else {
-        // Gdyby widget był zablokowany przez CSP/adblock
-        const flash = document.getElementById('flash');
-        flash.textContent = 'Nie udało się załadować modułu logowania. Odśwież stronę lub skontaktuj się z administratorem.';
-        flash.className = 'flash warn';
-        flash.style.display = 'block';
-      }
-    });
-  </script>
 </body>
 </html>
