@@ -1,80 +1,46 @@
+## Netlify configuration for Identity + protected members area
+
 [build]
-  publish   = "public"
+  publish = "public"
   functions = "netlify/functions"
 
-# --- API NA GÓRZE ---
-[[redirects]]
-  from = "/api/chat"
-  to   = "/.netlify/functions/chat"
-  status = 200
-  force  = true
-
-# --- HTTPS ---
-[[redirects]]
-  from = "http://*"
-  to   = "https://:splat"
-  status = 301
-  force  = true
-
-# --- LOGIN: publiczny obszar (SPA-friendly) ---
-[[redirects]]
-  from = "/login/*"
-  to   = "/login/:splat"
-  status = 200
-  force  = true
-
-# --- MEMBERS: tylko active/admin ---
+## Role-based access to members area on the CDN edge.
+## Requires the browser to send nf_jwt cookie (set in auth.js after login).
 [[redirects]]
   from = "/members/*"
-  to   = "/members/:splat"
+  to = "/members/index.html"
   status = 200
-  force  = true
-  conditions = { Role = ["active", "admin"] }
+  conditions = { Role = ["active"] }
 
+## Fallback: anyone without the role gets redirected to login.
 [[redirects]]
   from = "/members/*"
-  to   = "/unauthorized.html"
-  status = 401
-  force  = true
+  to = "/login/"
+  status = 302
 
+## Convenience routing for pretty URLs
+[[redirects]]
+  from = "/login"
+  to = "/login/index.html"
+  status = 200
 
-# --- Nagłówki ---
+[[redirects]]
+  from = "/members"
+  to = "/members/index.html"
+  status = 200
+
+## Strong no-cache for members to avoid stale authenticated content
 [[headers]]
   for = "/members/*"
   [headers.values]
-    Cache-Control = "private, no-store, no-cache, must-revalidate"
-
-
-[[headers]]
-  for = "/members/modules/yt/*"
-  [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube-nocookie.com https://www.youtube.com; connect-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; img-src 'self' https://i.ytimg.com data:; style-src 'self' 'unsafe-inline'; media-src https://*.googlevideo.com"
-
-[dev]
-  publish   = "public"
-  functions = "netlify/functions"
-
-# --- Brak cache i twardsze nagłówki dla strony z iframe
-[[headers]]
-  for = "/slides.html"
-  [headers.values]
-    Cache-Control = "no-store, no-cache, must-revalidate, max-age=0"
+    Cache-Control = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
     Pragma = "no-cache"
     Expires = "0"
-    Referrer-Policy = "no-referrer"
-    X-Content-Type-Options = "nosniff"
-    Permissions-Policy = "geolocation=(), microphone=(), camera=(), usb=(), payment=()"
-    # CSP nie blokuje treści wewnątrz iframu (to inny origin), ale ogranicza naszą stronę:
-    Content-Security-Policy = "default-src 'none'; frame-src https://docs.google.com https://drive.google.com; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
 
-# --- Brak cache także dla samej funkcji
+## Also avoid caching for login page to keep auth state fresh
 [[headers]]
-  for = "/members/modules/slides/*"
+  for = "/login/*"
   [headers.values]
-    Cache-Control = "no-store"
-
-# --- Fallback 404 dla pozostałych ścieżek ---
-[[redirects]]
-  from = "/*"
-  to   = "/404.html"
-  status = 404
+    Cache-Control = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+    Pragma = "no-cache"
+    Expires = "0"

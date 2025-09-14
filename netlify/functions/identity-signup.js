@@ -1,19 +1,12 @@
-// netlify/functions/identity-signup.js
+// Pass-through for signup. To disable open signups, set Identity to "Invite only"
+// in the Netlify dashboard. This keeps invited users working.
+
 exports.handler = async (event) => {
   try {
-    const payload = JSON.parse(event.body || "{}");
-    const user = payload && payload.user;
-    if (!user) {
-      return { statusCode: 400, body: "No user in payload" };
-    }
-    // Nadaj rolę "pending" podczas rejestracji
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ app_metadata: { roles: ["pending"] } })
-    };
-  } catch {
-    // Nie blokuj rejestracji, jeśli coś się wykrzaczy
-    return { statusCode: 200, body: "{}" };
+    // You can enrich metadata here if needed.
+    // const payload = JSON.parse(event.body || '{}');
+    return { statusCode: 200, body: JSON.stringify({}) };
+  } catch (e) {
+    return { statusCode: 200, body: JSON.stringify({}) };
   }
 };
