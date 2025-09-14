@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>ChemDisk – Kontakt (Members)</title>
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- Netlify Identity (wymagane do autouzupełniania e-maila) -->
+    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+    <script defer src="/assets/js/auth.js"></script>
+
+    <!-- Style strony kontaktowej modułu -->
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <header class="card-header">
+          <h1>Skontaktuj się z nami</h1>
+          <p class="subtitle">Masz pytanie o kurs lub zajęcia? Napisz.</p>
+        </header>
+
+        <form name="members-contact" method="POST" data-netlify="true" data-netlify-recaptcha="true" class="contact-form">
+          <!-- Wymagane dla Netlify Forms, gdy form jest obsługiwany statycznie -->
+          <input type="hidden" name="form-name" value="members-contact" />
+
+          <!-- Pole wewnętrzne (ukryte) – info techniczna dla mnie -->
+          <input type="hidden" name="internal_note" value="wiadomość wysłana z formularza na stronie w members" />
+
+          <div class="row two-cols">
+            <div class="field">
+              <label for="name">Imię i nazwisko</label>
+              <input id="name" name="name" type="text" placeholder="Jan Kowalski" required />
+            </div>
+            <div class="field">
+              <label for="email">E-mail</label>
+              <input id="email" name="email" type="email" placeholder="twoj@email.pl" required />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="subject">Przedmiot / poziom</label>
+            <input id="subject" name="subject" type="text" placeholder="np. Matematyka podstawowa" required />
+          </div>
+
+          <div class="field">
+            <label for="message">Wiadomość</label>
+            <textarea id="message" name="message" rows="8" placeholder="Twoja wiadomość..." required></textarea>
+          </div>
+
+          <!-- Netlify Captcha -->
+          <div data-netlify-recaptcha="true" class="captcha"></div>
+
+          <div class="actions">
+            <button type="submit" class="btn">Wyślij</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      // Autouzupełnianie e-maila zalogowanego użytkownika Netlify Identity
+      document.addEventListener('DOMContentLoaded', () => {
+        const ID = window.netlifyIdentity;
+        const emailInput = document.getElementById('email');
+        if (!ID || !emailInput) return;
+
+        try { ID.init(); } catch {}
+
+        const applyEmail = () => {
+          try {
+            const user = ID.currentUser();
+            if (!user) return;
+            const email = user.email || (user.user_metadata && user.user_metadata.email);
+            if (email) {
+              emailInput.value = email;
+              emailInput.readOnly = true; // żeby użytkownik nie zmieniał e-maila konta
+            }
+          } catch {}
+        };
+
+        // Ustaw na init i na login (gdyby odświeżono token itp.)
+        try { ID.on('init', applyEmail); } catch {}
+        try { ID.on('login', applyEmail); } catch {}
+
+        // Spróbuj również od razu po krótkim opóźnieniu
+        setTimeout(applyEmail, 200);
+      });
+    </script>
+  </body>
+  </html>

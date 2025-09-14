@@ -159,7 +159,8 @@
 
     function saveState(raw){ try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(raw)); } catch {} }
     function loadState(){ try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'{}'); } catch { return {}; } }
-    function clearQuery(){ try { history.replaceState({}, document.title, location.pathname || '/'); } catch {} }
+    // Po zaczytaniu parametrów, wyczyść pasek adresu do roota ("/")
+    function clearQuery(){ try { history.replaceState({}, document.title, '/'); } catch {} }
 
     // ——— Parsowanie wejścia ———
     function normalizeInput(raw){
