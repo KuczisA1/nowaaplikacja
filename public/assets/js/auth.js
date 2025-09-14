@@ -18,7 +18,13 @@
   const MEMBERS_PATH = '/members/';
   const LOGIN_PATH = '/login/';
 
-  const isMembersPage = () => location.pathname.startsWith(MEMBERS_PATH);
+  const isMembersPage = () => {
+    try {
+      // Prefer explicit marker when URL gets cleaned to '/'
+      if (document.querySelector('meta[name="x-members"][content="1"]')) return true;
+    } catch {}
+    return location.pathname.startsWith(MEMBERS_PATH);
+  };
   const isLoginPage = () => location.pathname.startsWith(LOGIN_PATH);
 
   const getUser = () => {
