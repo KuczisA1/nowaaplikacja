@@ -2,58 +2,34 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Strefa kursanta – logowanie</title>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Strefa kursanta</title>
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
   <script defer src="/assets/js/auth.js"></script>
-
-  <meta http-equiv="Cache-Control" content="no-store" />
-
   <style>
-    :root{--border:#e5e7eb;--shadow:0 4px 18px rgba(0,0,0,.06)}
-    *{box-sizing:border-box}
     html,body{height:100%;margin:0}
-    body{display:grid;place-items:center;background:#fff;font:16px/1.45 system-ui,Segoe UI,Roboto,Arial}
-    .card{width:min(680px,92vw);padding:26px 28px;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
-    h1{margin:0 0 6px 0;font-size:22px}
-    p.muted{margin:.25rem 0 1rem;color:#6b7280}
-    #flash{margin:.5rem 0 0;padding:10px 12px;border-radius:10px;display:none}
-    #flash.warn{display:block;background:#FEF3C7;border:1px solid #FCD34D}
-    #flash.ok{display:block;background:#DCFCE7;border:1px solid #86EFAC}
-    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .btn{appearance:none;border:none;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer}
-    .btn-primary{background:#111827;color:#fff}
-    .helper{font-size:13px;color:#6b7280;margin-top:10px}
-    .helper b{color:#111827}
-
-    /* Ukryj rejestrację w modalu */
-    .netlify-identity-modal [data-netlify-identity-button="signup"],
-    .netlify-identity-modal .netlify-identity-tab-item[data-tab="signup"],
-    .netlify-identity-modal .netlify-identity-view[data-view="signup"]{
-      display:none !important;
-    }
+    body{display:grid;place-items:center;font:16px/1.4 system-ui,Segoe UI,Roboto,Arial}
+    .card{padding:24px 28px;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+    .row{display:flex;gap:12px;align-items:center;justify-content:center}
+    .btn{border:none;border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer;background:#ef4444;color:white}
   </style>
+  <meta http-equiv="Cache-Control" content="no-store" />
 </head>
 <body>
-  <div class="card" role="region" aria-labelledby="login-title">
-    <h1 id="login-title">Strefa kursanta</h1>
-    <p class="muted">Zaloguj się, aby uzyskać dostęp do materiałów.</p>
-
-    <div id="flash" class="flash" aria-live="polite"></div>
-
-    <div class="row" style="margin-top:8px">
-      <button id="login-btn" class="btn btn-primary">Zaloguj</button>
+  <div class="card">
+    <div class="row">
+      <button id="logout-link" class="btn">Wyloguj</button>
     </div>
-
-    <p class="helper">
-      Logowanie tylko dla istniejących kont. <b>Rejestracja jest wyłączona</b> – jeśli nie masz konta lub
-      widzisz komunikat o braku aktywacji, <b>poproś administratora o aktywację konta</b>.
-    </p>
-
-    <noscript>
-      <p class="muted">Do logowania wymagany jest JavaScript.</p>
-    </noscript>
   </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof netlifyIdentity !== 'undefined') {
+        try { netlifyIdentity.init(); } catch {}
+        netlifyIdentity.on('logout', () => location.replace('/'));
+        // jeśli ktoś tu trafi bez zalogowania, auth.js od razu cofnie na /login/
+      }
+    });
+  </script>
 </body>
 </html>
+

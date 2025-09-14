@@ -2,58 +2,115 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Strefa kursanta – logowanie</title>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Logowanie – Aplikacja</title>
+  <link rel="stylesheet" href="/login/style.css" />
+  <!-- Widget Identity (dla sesji i eventów) -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+  <!-- Spójna logika sesji/nawigacji -->
   <script defer src="/assets/js/auth.js"></script>
-
-  <meta http-equiv="Cache-Control" content="no-store" />
-
-  <style>
-    :root{--border:#e5e7eb;--shadow:0 4px 18px rgba(0,0,0,.06)}
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0}
-    body{display:grid;place-items:center;background:#fff;font:16px/1.45 system-ui,Segoe UI,Roboto,Arial}
-    .card{width:min(680px,92vw);padding:26px 28px;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
-    h1{margin:0 0 6px 0;font-size:22px}
-    p.muted{margin:.25rem 0 1rem;color:#6b7280}
-    #flash{margin:.5rem 0 0;padding:10px 12px;border-radius:10px;display:none}
-    #flash.warn{display:block;background:#FEF3C7;border:1px solid #FCD34D}
-    #flash.ok{display:block;background:#DCFCE7;border:1px solid #86EFAC}
-    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .btn{appearance:none;border:none;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer}
-    .btn-primary{background:#111827;color:#fff}
-    .helper{font-size:13px;color:#6b7280;margin-top:10px}
-    .helper b{color:#111827}
-
-    /* Ukryj rejestrację w modalu */
-    .netlify-identity-modal [data-netlify-identity-button="signup"],
-    .netlify-identity-modal .netlify-identity-tab-item[data-tab="signup"],
-    .netlify-identity-modal .netlify-identity-view[data-view="signup"]{
-      display:none !important;
-    }
-  </style>
 </head>
 <body>
-  <div class="card" role="region" aria-labelledby="login-title">
-    <h1 id="login-title">Strefa kursanta</h1>
-    <p class="muted">Zaloguj się, aby uzyskać dostęp do materiałów.</p>
+  <div class="wrapper">
+    <div class="tabs" role="tablist" aria-label="Formularze uwierzytelniania">
+      <button class="tab-btn active" data-tab="login" role="tab" aria-selected="true">Zaloguj się</button>
+    </div>
 
     <div id="flash" class="flash" aria-live="polite"></div>
 
-    <div class="row" style="margin-top:8px">
-      <button id="login-btn" class="btn btn-primary">Zaloguj</button>
-    </div>
+    <!-- Logowanie -->
+    <form id="login-form" class="form active" autocomplete="on" novalidate>
+      <h2>Logowanie</h2>
+      <div class="input-field">
+        <input type="email" id="login-email" required autocomplete="email" />
+        <label for="login-email">Email</label>
+      </div>
+      <div class="input-field">
+        <input type="password" id="login-password" required autocomplete="current-password" />
+        <label for="login-password">Hasło</label>
+      </div>
+      <button id="login-submit" type="submit">Zaloguj się</button>
+      <p class="helper">Zapomniałeś hasła? <a id="recover-link" href="#">Odzyskaj dostęp</a></p>
+    </form>
 
-    <p class="helper">
-      Logowanie tylko dla istniejących kont. <b>Rejestracja jest wyłączona</b> – jeśli nie masz konta lub
-      widzisz komunikat o braku aktywacji, <b>poproś administratora o aktywację konta</b>.
-    </p>
-
-    <noscript>
-      <p class="muted">Do logowania wymagany jest JavaScript.</p>
-    </noscript>
+    <!-- Brak rejestracji: konta zakładane tylko przez administratora w Netlify -->
   </div>
+
+  <script>
+    // UI helpers
+    const flash = (msg, type = "") => {
+      const box = document.getElementById("flash");
+      box.textContent = msg || "";
+      box.className = `flash ${type}`;
+    };
+    const setBusy = (btn, busy, label) => {
+      if (!btn) return;
+      if (!btn.dataset.label && label) btn.dataset.label = label;
+      btn.disabled = !!busy;
+      btn.dataset.busy = busy ? "1" : "0";
+      if (btn.dataset.label) btn.textContent = busy ? "Przetwarzam..." : btn.dataset.label;
+    };
+
+    // Tabs
+    // Zakładki zostały usunięte (brak rejestracji)
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // Jeżeli już zalogowany i aktywny → przenieś do members
+      netlifyIdentity.on("init", (user) => {
+        if (user) {
+          try {
+            const roles = (user.app_metadata && user.app_metadata.roles) || [];
+            if (roles.includes('admin') || roles.includes('active')) {
+              window.location.replace("/members/");
+            }
+          } catch(e) {}
+        }
+      });
+      netlifyIdentity.init();
+
+      // Logowanie (bez popupa)
+      const loginBtn = document.getElementById("login-submit");
+      loginBtn.dataset.label = "Zaloguj się";
+      document.getElementById("login-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        flash("");
+        const email = document.getElementById("login-email").value.trim();
+        const password = document.getElementById("login-password").value;
+        if (!email || !password) return flash("Uzupełnij email i hasło.", "warn");
+
+        try {
+          setBusy(loginBtn, true);
+          await netlifyIdentity.gotrue.login(email, password, true);
+          try { await netlifyIdentity.refresh(); } catch {}
+          const user = netlifyIdentity.currentUser();
+          const roles = (user && user.app_metadata && user.app_metadata.roles) || [];
+          const active = roles.includes('admin') || roles.includes('active');
+          if (active) {
+            flash("Zalogowano. Przenoszę...", "success");
+            setTimeout(() => { window.location.replace("/members/"); }, 250);
+          } else {
+            flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
+          }
+        } catch (err) {
+          flash("Błąd logowania: " + (err?.message || err), "error");
+        } finally {
+          setBusy(loginBtn, false);
+        }
+      });
+
+      // Reset hasła
+      document.getElementById("recover-link").addEventListener("click", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("login-email").value.trim();
+        if (!email) return flash("Podaj najpierw email w polu logowania.", "warn");
+        try {
+          await netlifyIdentity.gotrue.requestPasswordRecovery(email);
+          flash("Wysłano link do resetu hasła. Sprawdź skrzynkę.", "success");
+        } catch (err) {
+          flash("Nie udało się wysłać linku: " + (err?.message || err), "error");
+        }
+      });
+    });
+  </script>
 </body>
 </html>

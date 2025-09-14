@@ -1,116 +1,289 @@
-// public/assets/js/auth.js
+// @ts-nocheck
 (() => {
-  const isLoginPage = () => location.pathname.replace(/\/+$/, '') === '/login';
-  const gotoLogin   = () => location.replace('/login/');
-  const gotoMembers = () => location.replace('/members/');
-  const q = new URLSearchParams(location.search);
+  'use strict';
 
-  const flashEl = () => document.getElementById('flash');
-  const setFlash = (msg, type = '') => {
-    const el = flashEl();
-    if (!el) return;
-    el.textContent = msg || '';
-    el.className = `flash ${type}`;
-    el.style.display = msg ? 'block' : 'none';
+  const $ = (id) => document.getElementById(id);
+  const hasIdentity = () => typeof window !== 'undefined' && !!window.netlifyIdentity;
+
+  // ===== ŚCIEŻKI =====
+  const PATHS = {
+    home: ['/', '/index.html'],
+    membersBase: '/members',
+    loginBase: '/login',   // zakładamy public/login/index.html
   };
 
-  const hasActiveRole = (user) => {
-    try {
-      const roles = (user?.app_metadata?.roles) || [];
-      return roles.includes('active') || roles.includes('admin');
-    } catch { return false; }
-  };
-  window.__auth_hasActiveRole = hasActiveRole;
+  // Normalizacja path (bez końcowego "/")
+  const norm = (p) => (p.endsWith('/') && p !== '/') ? p.slice(0, -1) : p;
+  const here = () => norm(location.pathname);
 
-  const genSID = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const onHome = () => PATHS.home.includes(location.pathname);
+  const onMembers = () => here().startsWith(norm(PATHS.membersBase));
+  const onLogin = () => here().startsWith(norm(PATHS.loginBase));
 
-  async function bindSessionOnLogin(user) {
-    try {
-      const sid = genSID();
-      localStorage.setItem('session_token', sid);
-      await user?.update?.({ data: { session: sid, session_set_at: Date.now() } });
-    } catch {}
+  // ===== STAN =====
+  let bootstrapped = false;
+  let painting = false;
+  let guardPending = false;
+  let guardQueued = false;
+
+  // ===== COOKIE nf_jwt =====
+  function setJwtCookie(token) {
+    if (!token) return;
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const secure = isLocal ? '' : ' Secure;';
+    document.cookie = `nf_jwt=${token}; Path=/;${secure} SameSite=Lax; Max-Age=3600`;
   }
-  window.__auth_bindSessionOnLogin = bindSessionOnLogin;
-
-  async function checkSessionDrift() {
-    const user = (typeof netlifyIdentity !== 'undefined') ? netlifyIdentity.currentUser() : null;
-    if (!user) return;
-    try {
-      if (document.visibilityState === 'visible') {
-        try { await user.jwt?.(true); } catch {}
-      }
-      const remote = user?.user_metadata?.session;
-      const local  = localStorage.getItem('session_token');
-      if (remote && local && remote !== local) {
-        await user.logout();
-        gotoLogin();
-      }
-    } catch {}
+  function clearJwtCookie() {
+    document.cookie = 'nf_jwt=; Path=/; Max-Age=0; Secure; SameSite=Lax';
   }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') checkSessionDrift();
-  });
-  setInterval(checkSessionDrift, 60000);
+  // ===== ROLE → STATUS =====
+  function statusFromRoles(roles) {
+    if (!Array.isArray(roles)) return 'pending';
+    if (roles.includes('admin') || roles.includes('active')) return 'active';
+    if (roles.includes('pending')) return 'pending';
+    return 'pending';
+  }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    // Jeżeli widget zablokowany (CSP/adblock) — pokaż komunikat
-    if (typeof netlifyIdentity === 'undefined') {
-      setFlash('Nie udało się załadować modułu logowania. Sprawdź blokery lub skontaktuj się z administratorem.', 'warn');
-      // Dezaktywuj przycisk jeżeli istnieje
-      const btn = document.getElementById('login-btn');
-      if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; btn.style.cursor = 'not-allowed'; }
-      return;
+  // ===== UI LINKI =====
+  function updateAuthLinks(user) {
+    const dashboardLink = $('dashboard-link');
+    if (dashboardLink) dashboardLink.style.display = user ? '' : 'none';
+  }
+
+  // ===== JWT refresh / naprawa sesji =====
+  async function ensureFreshJwtCookieOrLogout() {
+    if (!hasIdentity()) return false;
+    const ni = window.netlifyIdentity;
+    const u = ni.currentUser();
+    if (!u) { clearJwtCookie(); return false; }
+
+    // 1. Spróbuj zwykłego JWT
+    try {
+      const token = await u.jwt();
+      setJwtCookie(token);
+      return true;
+    } catch {}
+
+    // 2. Wymuś odświeżenie
+    try {
+      const token = await u.jwt(true);
+      setJwtCookie(token);
+      return true;
+    } catch {}
+
+    // 3. Nie udało się — wyloguj i zostań na /login/
+    clearJwtCookie();
+    try { await ni.logout(); } catch {}
+    return false;
+  }
+
+  async function refreshUser(user) {
+    try { await user.jwt(true); } catch {}
+    return window.netlifyIdentity.currentUser() || user;
+  }
+
+  function updateNavForStatus(status) {
+    const membersLink = $('members-link');
+    if (membersLink) membersLink.style.display = (status === 'active') ? '' : 'none';
+  }
+
+  // ===== Nazwy użytkownika =====
+  function deriveNames(user) {
+    const md = (user && user.user_metadata) || {};
+    const preferredDisplay =
+      md.name ||
+      md.full_name ||
+      md.display_name ||
+      (user && user.email ? user.email.split('@')[0] : '');
+
+    const username =
+      md.username ||
+      md.preferred_username ||
+      (preferredDisplay ? String(preferredDisplay).replace(/\s+/g, '') : '') ||
+      (user && user.email ? user.email.split('@')[0] : '');
+
+    return {
+      displayName: preferredDisplay || '',
+      username: username || ''
+    };
+  }
+
+  async function paintUser() {
+    if (painting) return;
+    painting = true;
+    try {
+      if (!hasIdentity()) return;
+      let user = window.netlifyIdentity.currentUser();
+      updateAuthLinks(user);
+      if (!user) return;
+
+      user = await refreshUser(user);
+      try { setJwtCookie(await user.jwt()); } catch {}
+      updateAuthLinks(user);
+
+      const emailEl = $('user-email');
+      const emailEl2 = $('user-email-current');
+      const nameEl = $('user-name');
+      const unameEl = $('user-username');
+      const statusEl = $('user-status');
+      const hintEl = $('status-hint');
+
+      if (emailEl)  emailEl.textContent  = user.email || '—';
+      if (emailEl2) emailEl2.textContent = user.email || '—';
+
+      const { displayName, username } = deriveNames(user);
+      document.querySelectorAll('.js-username').forEach(el => { el.textContent = username || '—'; });
+
+      if (nameEl)  nameEl.textContent  = displayName || '—';
+      if (unameEl) unameEl.textContent = username || '—';
+
+      const roles = (user.app_metadata && user.app_metadata.roles) || [];
+      const status = statusFromRoles(roles);
+
+      if (statusEl) statusEl.textContent = status;
+      updateNavForStatus(status);
+
+      if (hintEl) {
+        hintEl.textContent = (status === 'active')
+          ? 'Masz aktywną rolę. Dostęp do strefy Members jest włączony.'
+          : 'Status pending – poproś administratora o aktywację konta.';
+      }
+    } finally {
+      painting = false;
+    }
+  }
+
+  // ===== Bezpieczne przejście (anty-pętla) =====
+  function safeGo(path) {
+    path = norm(path);
+    if (here() === path) return;
+    const last = sessionStorage.getItem('lastNavPath');
+    const lastTs = Number(sessionStorage.getItem('lastNavTs') || 0);
+    const now = Date.now();
+    if (last === path && (now - lastTs) < 2000) return; // nie skacz w kółko
+    sessionStorage.setItem('lastNavPath', path);
+    sessionStorage.setItem('lastNavTs', String(now));
+    location.replace(path); // bez dorzucania historii
+  }
+
+  // (Usunięto cross-device logout: brak ukrytych wylogowań, zero pollingu)
+
+  // ===== Guard właściwy =====
+  async function guardAndPaintCore() {
+    if (!hasIdentity()) return;
+
+    const user = window.netlifyIdentity.currentUser();
+
+    // HOME: jeśli zalogowany i ACTIVE → members
+    if (onHome() && user) {
+      const roles = (user.app_metadata && user.app_metadata.roles) || [];
+      const status = statusFromRoles(roles);
+      if (status === 'active') {
+        safeGo(`${norm(PATHS.membersBase)}/`);
+        return;
+      }
     }
 
-    try { netlifyIdentity.init(); } catch {}
-
-    // ===== Handlery UI (bez inline) ========================================
-    // LOGIN: otwarcie modala
-    const loginBtn = document.getElementById('login-btn');
-    if (loginBtn) {
-      loginBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        try { netlifyIdentity.open('login'); } catch {}
-      });
-    }
-
-    // LOGOUT: przycisk w members/
-    const logoutBtn = document.getElementById('logout-link');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        try { await netlifyIdentity.currentUser()?.logout(); } catch {}
-        gotoLogin();
-      });
-    }
-
-    // ===== Zdarzenia Identity ==============================================
-    netlifyIdentity.on('init', (user) => {
-      if (isLoginPage()) {
-        if (user) {
-          if (hasActiveRole(user)) {
-            gotoMembers();
-          } else {
-            setFlash('Konto nieaktywne – poproś administratora o aktywację konta.', 'warn');
-          }
-        } else if (q.get('reason') === 'other_session') {
-          setFlash('Zostałeś wylogowany, ponieważ zalogowano się na innym urządzeniu.', 'warn');
+    // LOGIN: jeśli zalogowany → po świeżym JWT sprawdź rolę; ACTIVE → members, inaczej zostań
+    if (onLogin()) {
+      if (user) {
+        const ok = await ensureFreshJwtCookieOrLogout();
+        if (ok) {
+          const roles = (user.app_metadata && user.app_metadata.roles) || [];
+          const status = statusFromRoles(roles);
+          if (status === 'active') safeGo(`${norm(PATHS.membersBase)}/`);
         }
       }
+      return; // gdy niezalogowany → zostań na /login/
+    }
+
+    // Inne: opcjonalnie odśwież UI jeśli zalogowany
+    if (user) {
+      await paintUser();
+    }
+  }
+
+  async function runGuard() {
+    if (guardPending) { guardQueued = true; return; }
+    guardPending = true;
+    try { await guardAndPaintCore(); }
+    finally {
+      guardPending = false;
+      if (guardQueued) { guardQueued = false; runGuard(); }
+    }
+  }
+
+  function bootstrap() {
+    if (bootstrapped || !hasIdentity()) return;
+    bootstrapped = true;
+
+    try { window.netlifyIdentity.init(); } catch {}
+
+    // Klik „Zaloguj się” na HOME → /login/
+    const loginBtn = $('login-btn');
+    if (loginBtn) {
+      loginBtn.addEventListener('click', (e) => {
+        if (loginBtn.tagName === 'BUTTON') e.preventDefault();
+        safeGo(`${norm(PATHS.loginBase)}/`);
+      });
+    }
+
+    const logoutLink = $('logout-link');
+    if (logoutLink) {
+      logoutLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.netlifyIdentity.logout();
+      });
+    }
+
+    // ===== Identity lifecycle =====
+    window.netlifyIdentity.on('init', async (user) => {
+      updateAuthLinks(user);
+      if (user) {
+        const ok = await ensureFreshJwtCookieOrLogout();
+        if (!ok) { await runGuard(); return; }
+      } else {
+        clearJwtCookie();
+      }
+      await runGuard();
     });
 
-    netlifyIdentity.on('login', async (user) => {
-      if (hasActiveRole(user)) {
-        await bindSessionOnLogin(user);
-        try { netlifyIdentity.close(); } catch {}
-        gotoMembers();
+    window.netlifyIdentity.on('login', async (user) => {
+      updateAuthLinks(user);
+      const ok = await ensureFreshJwtCookieOrLogout();
+      if (!ok) return;
+      const roles = (user.app_metadata && user.app_metadata.roles) || [];
+      const status = statusFromRoles(roles);
+      if (status === 'active') {
+        safeGo(`${norm(PATHS.membersBase)}/`);
       } else {
-        setFlash('Konto nieaktywne – poproś administratora o aktywację konta.', 'warn');
+        // pozostań na loginie
+        if (!onLogin()) safeGo(`${norm(PATHS.loginBase)}/`);
       }
     });
 
-    netlifyIdentity.on('logout', () => gotoLogin());
+    window.netlifyIdentity.on('logout', () => {
+      updateAuthLinks(null);
+      clearJwtCookie();
+      safeGo(PATHS.home[0]); // '/'
+    });
+
+    // ===== Zdarzenia środowiskowe =====
+    window.addEventListener('pageshow', () => { runGuard(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') runGuard();
+    });
+    window.addEventListener('storage', (e) => {
+      if (e.key && e.key.includes('gotrue.user')) runGuard();
+    });
+  }
+
+  // Start
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!hasIdentity()) return;
+    bootstrap();
+    updateAuthLinks(window.netlifyIdentity.currentUser());
+    runGuard();
   });
 })();

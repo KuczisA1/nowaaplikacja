@@ -1,38 +1,33 @@
 // netlify/functions/identity-login.js
+const crypto = require('crypto');
+
 exports.handler = async (event) => {
   try {
-    const body = JSON.parse(event.body || "{}");
-    const user = body.user || {};
+    const payload = JSON.parse(event.body || "{}");
+    const user = payload && payload.user;
+    if (!user) return { statusCode: 400, body: "No user in payload" };
+
+    const newSession =
+      (crypto.randomUUID && crypto.randomUUID()) ||
+      crypto.randomBytes(16).toString('hex');
+
     const roles = (user.app_metadata && user.app_metadata.roles) || [];
+    const hasRoles = Array.isArray(roles) && roles.length > 0;
 
-    // NIE blokujemy logowania — pokazujesz komunikat na /login/ (auth.js + RBAC na CDN)
-    // Jeśli jednak chcesz twardo zablokować logowanie dla nieaktywnych kont,
-    // odkomentuj blok poniżej:
-    /*
-    const allowed = roles.includes('active') || roles.includes('admin');
-    if (!allowed) {
-      return {
-        statusCode: 401,
-        body: JSON.stringify({ error: "Konto nieaktywne. Poproś administratora o aktywację." })
-      };
+    const resp = {
+      // przechowujemy wersję sesji na koncie
+      user_metadata: { current_session: newSession }
+    };
+    if (!hasRoles) {
+      resp.app_metadata = { roles: ["pending"] };
     }
-    */
-
-    // Nadaj nowy identyfikator sesji — poprzednie urządzenia zostaną "zdetronizowane"
-    const sid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        user_metadata: {
-          ...(user.user_metadata || {}),
-          session: sid,
-          session_set_at: Date.now()
-        }
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(resp)
     };
-  } catch (e) {
-    // w razie czego nie blokuj logowania
-    return { statusCode: 200, body: JSON.stringify({}) };
+  } catch {
+    return { statusCode: 200, body: "{}" };
   }
 };
