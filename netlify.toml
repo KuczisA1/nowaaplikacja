@@ -8,7 +8,7 @@
 ## Requires the browser to send nf_jwt cookie (set in auth.js after login).
 [[redirects]]
   from = "/members/*"
-  to = "/members/index.html"
+  to = "/members/:splat"
   status = 200
   conditions = { Role = ["active"] }
 

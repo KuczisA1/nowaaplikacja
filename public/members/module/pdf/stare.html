@@ -23,10 +23,40 @@
 
     html, body { height: 100%; margin: 0; background: #0b0b0c; overflow: hidden; }
 
-    /* Iframe’y */
-    #pdfFrame, #pdfFree, #pdfEmbed, #pdfObject{
+    /* Iframe z podglądem (type=1 – sandbox, preview) */
+    #pdfFrame{
       position: fixed; inset: 0; width: 100%; height: 100%;
-      border: 0; display: none; z-index: 1; pointer-events: auto !important; background: #000;
+      border: 0; display: none;
+      z-index: 1;
+      pointer-events: auto !important;
+      background: #000;
+    }
+
+    /* Iframe BEZ sandboxa – używany dla type=3 (preview bez zabezpieczeń) */
+    #pdfFree{
+      position: fixed; inset: 0; width: 100%; height: 100%;
+      border: 0; display: none;
+      z-index: 1;
+      pointer-events: auto !important;
+      background: #000;
+    }
+
+    /* Fallback: natywny viewer PDF w przeglądarce (używany tylko, gdy trzeba coś wyświetlić) */
+    #pdfEmbed{
+      position: fixed; inset: 0; width: 100%; height: 100%;
+      border: 0; display: none;
+      z-index: 1;
+      pointer-events: auto !important;
+      background: #000;
+    }
+
+    /* Alternatywny fallback przez <object> */
+    #pdfObject{
+      position: fixed; inset: 0; width: 100%; height: 100%;
+      border: 0; display: none;
+      z-index: 1;
+      pointer-events: auto !important;
+      background: #000;
     }
 
     /* Drobne poprawki dla trybu 1: pełny viewport i brak nakładki paska przewijania strony */
@@ -51,10 +81,10 @@
     }
     #topBar .btn:hover{ opacity: 1; background: #24262b; }
 
-    /* Opcjonalny overlay wiadomości (niewykorzystywany z loaderem) */
+    /* Overlay z komunikatami (lekki) */
     #msg{ position: fixed; inset: 0; z-index: 2; display: none; }
 
-    /* BLOKER ŁADOWANIA – używany dla type=2/3/4 (wyłączony dla type=1) */
+    /* PROSTY BLOKER ŁADOWANIA (pokazuj do czasu onload) */
     #loader{
       position: fixed; inset: 0; z-index: 2;
       display: grid; place-items: center;
@@ -66,7 +96,9 @@
     #loader .hint{ opacity:.85; font-size:14px; margin-top:.6rem; }
 
     /* Root maski nie przechwytuje eventów; tylko „hitbox” je łapie */
-    #maskRoot{ position: fixed; inset: 0; z-index: 3; pointer-events: none; }
+    #maskRoot{
+      position: fixed; inset: 0; z-index: 3; pointer-events: none;
+    }
     #maskRoot[hidden]{ display:none !important; }
 
     /* Pionowy pas po prawej – tylko górne 25% okna */
@@ -88,27 +120,28 @@
   </style>
 </head>
 <body>
-  <!-- Tryb 1: sandboxowany preview -->
   <iframe id="pdfFrame"
           title="Podgląd PDF (Google Drive – sandbox)"
           allowfullscreen webkitallowfullscreen mozallowfullscreen
           referrerpolicy="strict-origin-when-cross-origin"
           sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-pointer-lock"></iframe>
 
-  <!-- Tryb 3: PREVIEW bez zabezpieczeń (bez sandbox) -->
+  <!-- Iframe bez sandboxa dla trybu 3 (PREVIEW bez zabezpieczeń) -->
   <iframe id="pdfFree"
           title="Podgląd PDF (bez sandbox – PREVIEW)"
           allowfullscreen webkitallowfullscreen mozallowfullscreen
           referrerpolicy="strict-origin-when-cross-origin"></iframe>
 
-  <!-- Fallback: natywny viewer PDF / embed -->
+  <!-- Fallback: natywny viewer PDF w przeglądarce (używany tylko, gdy trzeba coś wyświetlić) -->
   <embed id="pdfEmbed" type="application/pdf" />
+
+  <!-- Alternatywny fallback przez <object> -->
   <object id="pdfObject" type="application/pdf" data="" aria-label="Podgląd PDF"></object>
 
   <!-- Pasek pomocniczy (link awaryjny, komunikaty) -->
   <div id="topBar" aria-hidden="true">
     <a id="dlBtn" class="btn" href="#" download>⬇ Pobierz</a>
-    <!-- opcjonalnie: <button id="resetBtn" class="btn" type="button">Reset</button> -->
+    <button id="printBtn" class="btn" type="button" hidden>🖨 Drukuj</button>
   </div>
 
   <!-- Maska anty-popout – WŁĄCZONA tylko w type=1 (tryb chroniony) -->
@@ -116,96 +149,52 @@
     <div class="rail" hidden></div>
   </div>
 
-  <!-- Stary komunikat (wyłączony) i loader (dla type 2/3/4) -->
+  <!-- Stary komunikat (wyłączony) i NOWY loader -->
   <div id="msg" hidden></div>
-  <div id="loader" hidden><div><b>Ładowanie dokumentu…</b><div class="hint">To może potrwać chwilę przy większych plikach</div></div></div>
+  <div id="loader"><div><b>Ładowanie dokumentu…</b><div class="hint">To może potrwać chwilę przy większych plikach</div></div></div>
 
   <!-- Niewidzialny link do wymuszenia pobierania (type=2) -->
   <a id="autoDownloader" href="#" download style="position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;" rel="noopener noreferrer"></a>
 
   <script>
     (() => {
-      const STORAGE_KEY = 'chemdisk_pdf_viewer_v2';
-
       const $ = (id) => document.getElementById(id);
       const on = (el, ev, fn, opts) => { try { el.addEventListener(ev, fn, opts || {}); } catch {} };
       const showLoader = (text, hint) => {
         const box = $('loader');
-        if (!box) return;
-        box.innerHTML = '<div><b>' + (text || 'Ładowanie dokumentu…') + '</b>' +
-                        (hint ? '<div class="hint">' + hint + '</div>' : '<div class="hint">To może potrwać chwilę przy większych plikach</div>') +
-                        '</div>';
-        box.hidden = false;
+        if (box) {
+          box.innerHTML = '<div><b>' + (text || 'Ładowanie dokumentu…') + '</b>' + (hint ? '<div class="hint">' + hint + '</div>' : '<div class="hint">To może potrwać chwilę przy większych plikach</div>') + '</div>';
+          box.hidden = false;
+        }
       };
       const hideLoader = () => { try { $('loader').hidden = true; } catch {} };
+      const hideMsg = () => { try { $('msg').hidden = true; } catch {} };
 
-      // ——— Remember/restore helpers ———
-      function saveState(state){
-        try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state || {})); } catch {}
-      }
-      function loadState(){
-        try {
-          const raw = sessionStorage.getItem(STORAGE_KEY);
-          return raw ? JSON.parse(raw) : {};
-        } catch { return {}; }
-      }
-      function clearQueryNow(){
-        try { history.replaceState(null, '', '/'); } catch {}
-      }
-
-      // ——— Params: ?id= … ?mode=gview ?mask=0 ?type=1|2|3|4  (+ opcjonalnie ?keep=1 dla debug)
-      const urlParams = new URLSearchParams(location.search);
-      const keepQuery = (urlParams.get('keep') || '') === '1';
-
-      // 1) Najpierw spróbuj odczytać z URL
-      let rawId   = (urlParams.get('id')   || '').trim();
-      let modeArg = (urlParams.get('mode') || '').trim().toLowerCase();
-      let maskArg = (urlParams.get('mask') || '').trim();
-      let typeArg = (urlParams.get('type') || '').trim();
-
-      // 2) Jeśli coś jest w URL, zapisz i NATYCHMIAST WYCZYŚĆ pasek (żeby nie było widać ID)
-      if (rawId || modeArg || maskArg || typeArg) {
-        const state = {
-          id: rawId,
-          mode: modeArg || undefined,
-          mask: maskArg || undefined,
-          type: typeArg || undefined,
-        };
-        saveState(state);
-        if (!keepQuery) clearQueryNow();
-      }
-
-      // 3) Jeśli brakuje czegoś, dopełnij z pamięci
-      const mem = loadState();
-      rawId   = rawId   || mem.id   || '';
-      modeArg = modeArg || mem.mode || '';
-      maskArg = (maskArg !== '') ? maskArg : (mem.mask ?? '');
-      typeArg = typeArg || mem.type || '1';
-
-      const useGView = modeArg === 'gview';
-      const maskEnabledParam = maskArg !== '0';
-      const viewerType = typeArg;
-
-      // ⬇️ NOWE: dla type=1 natychmiast wyłącz loader (overlay niepotrzebny)
-      if (viewerType === '1') {
-        try { $('loader').hidden = true; } catch {}
-      }
+      // —— Parametry: ?id=ID_LUB_LINK [wymagany], ?mode=gview (fallback), ?mask=0 (wyłącz maskę), ?type=1|2|3|4 (typ viewera)
+      const params = new URLSearchParams(location.search);
+      const rawId = (params.get('id') || '').trim();
+      const useGView = (params.get('mode') || '').toLowerCase() === 'gview';
+      const maskEnabledParam = (params.get('mask') || '') !== '0';
+      const viewerType = (params.get('type') || '1').trim();
 
       if (!rawId) {
-        // Nie ma ID ani w URL ani w pamięci
-        showLoader('Brak parametru ID.', 'Dodaj ?id=FILE_ID lub pełny link do Google Drive. (Możesz też wkleić raz z ?keep=1 do debugowania.)');
+        showLoader('Brak parametru ?id=…', 'Użyj pełnego linku do pliku Google Drive lub samego fileId.');
         return;
       }
 
-      // ——— Pomiar szerokości paska przewijania
+      // ——— NIE chowamy od razu parametrów – opóźniamy do czasu zakończenia inicjalizacji,
+      // aby uniknąć problemów z niektórymi przeglądarkami/urządzeniami.
+      const hideQuerySoon = () => { try { history.replaceState(null, '', '/'); } catch {} };
+
+      // ——— Pomiar szerokości paska przewijania strony (gdy jest widoczny) i zapis do CSS var
       function updateScrollbarWidthVar(){
-        const sbw = window.innerWidth - document.documentElement.clientWidth;
+        const sbw = window.innerWidth - document.documentElement.clientWidth; // 0 na macOS overlay
         document.documentElement.style.setProperty('--scrollbar-w', (sbw > 0 ? sbw : 0) + 'px');
       }
       updateScrollbarWidthVar();
       window.addEventListener('resize', updateScrollbarWidthVar);
 
-      // ——— Wyciągnij fileId
+      // ——— Wyciągnij fileId bez serwera/env
       function extractFileId(input){
         const s = String(input).trim();
         try {
@@ -233,7 +222,7 @@
       const viewSrc    = 'https://drive.google.com/file/d/' + encodeURIComponent(fileId) + '/view';
       const gviewSrc   = 'https://docs.google.com/gview?embedded=true&url=' + encodeURIComponent(directPdf);
 
-      // ——— Maska anty-popout: WŁĄCZONA tylko dla type=1 (tryb chroniony)
+      // ——— Maska anty‑popout: WŁĄCZONA tylko dla type=1 (tryb chroniony)
       function enableMaskForType1(){
         const maskRoot = $('maskRoot');
         maskRoot.hidden = false;
@@ -266,7 +255,7 @@
           } catch {}
         };
 
-        setTimeout(() => { hideLoader(); }, 800);
+        setTimeout(() => { hideLoader(); hideQuerySoon(); }, 800);
         setTimeout(() => { if (!autoClicked) fallbackOpen(); }, 2000);
       }
 
@@ -275,23 +264,22 @@
         showLoader();
         const free = $('pdfFree');
         free.src = useGView ? gviewSrc : previewSrc; // PREVIEW bez sandboxa i bez blokad
-        on(free, 'load', () => { free.style.display = 'block'; hideLoader(); }, { once:true });
+        on(free, 'load', () => { free.style.display = 'block'; hideLoader(); setTimeout(hideQuerySoon, 300); }, { once:true });
       }
 
-      // ——— Tryb 1: SANDBOX + PREVIEW (zabezpieczony, anty-konsolka, maska) — BEZ overlayu
+      // ——— Tryb 1: SANDBOX + PREVIEW (zabezpieczony, anty‑konsolka, maska)
       function runType1Protected(){
+        showLoader('Ładowanie dokumentu…');
         const frame = $('pdfFrame');
         const src = useGView ? gviewSrc : previewSrc;
         frame.src = src;
-        on(frame, 'load', () => { frame.style.display = 'block'; }, { once:true });
-
-        // Układ i maska
+        on(frame, 'load', () => { frame.style.display = 'block'; hideLoader(); setTimeout(hideQuerySoon, 300); }, { once:true });
         document.body.classList.add('type1');
         document.documentElement.classList.add('hide-scrollbar');
         document.body.classList.add('hide-scrollbar');
         if (maskEnabledParam) enableMaskForType1();
 
-        // Anty-konsolka / utrudnienia – TYLKO W TYPE=1
+        // Anty‑konsolka / utrudnienia – TYLKO W TYPE=1
         try {
           document.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
           document.addEventListener('keydown', e => {
@@ -316,15 +304,17 @@
         } catch {}
       }
 
-      // ——— Tryb 4: SANDBOX + PREVIEW (zabezpieczony), ale bez hide-scrollbar i bez overlayu
+      // ——— Tryb 4: SANDBOX + PREVIEW (zabezpieczony, ALE bez overlay i z widocznym scrollbar)
       function runType4ProtectedNoOverlay(){
+        // Brak overlay: loader wystarczy – pokażemy dopiero po onload
         showLoader('Ładowanie dokumentu…');
         const frame = $('pdfFrame');
         const src = useGView ? gviewSrc : previewSrc;
         frame.src = src;
-        on(frame, 'load', () => { frame.style.display = 'block'; hideLoader(); }, { once:true });
+        // Scrollbar DOZWOLONY – nie dodajemy klas hide-scrollbar
+        on(frame, 'load', () => { frame.style.display = 'block'; hideLoader(); setTimeout(hideQuerySoon, 300); }, { once:true });
 
-        // Anty-konsolka / skróty – jak w type=1
+        // Anty‑konsolka / skróty – jak w type=1
         try {
           document.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
           document.addEventListener('keydown', e => {
@@ -333,7 +323,7 @@
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i','j','c'].includes(k)) return e.preventDefault();
             if ((e.ctrlKey || e.metaKey) && ['u','s','p'].includes(k)) return e.preventDefault();
           }, { capture:true });
-          // Maska opcjonalna przez param mask=1 (jeśli chcesz, możesz włączyć enableMaskForType1())
+          // Maska opcjonalna przez mask=1
         } catch {}
       }
 
@@ -352,9 +342,6 @@
       // Minimalna diagnostyka CSS – upewnij się, że element docelowy przechwytuje eventy
       const targetEl = (viewerType === '3') ? $('pdfFree') : (viewerType === '2') ? $('pdfEmbed') : $('pdfFrame');
       try { const cs = getComputedStyle(targetEl); if (cs.pointerEvents === 'none') targetEl.style.pointerEvents = 'auto'; } catch {}
-
-      // Opcjonalnie: handler resetu pamięci (jeśli dodasz przycisk resetBtn)
-      // on($('resetBtn'), 'click', () => { sessionStorage.removeItem(STORAGE_KEY); location.href='/' });
     })();
   </script>
 </body>
