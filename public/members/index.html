@@ -25,11 +25,19 @@
     document.addEventListener('DOMContentLoaded', () => {
       if (typeof netlifyIdentity !== 'undefined') {
         try { netlifyIdentity.init(); } catch {}
-        netlifyIdentity.on('logout', () => location.replace('/'));
+        // Po wylogowaniu przenieś na stronę logowania z komunikatem
+        netlifyIdentity.on('logout', () => location.replace('/login/?loggedout=1'));
+        // Obsługa kliknięcia przycisku "Wyloguj"
+        const btn = document.getElementById('logout-link');
+        if (btn) {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            try { netlifyIdentity.logout(); } catch { location.replace('/login/?loggedout=1'); }
+          });
+        }
         // jeśli ktoś tu trafi bez zalogowania, auth.js od razu cofnie na /login/
       }
     });
   </script>
 </body>
 </html>
-
