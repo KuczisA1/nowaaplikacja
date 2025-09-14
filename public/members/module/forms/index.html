@@ -364,30 +364,7 @@
       });
     })();
 
-    // ——— Anty-konsolka / utrudnienia ———
-    try {
-      document.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
-      document.addEventListener('keydown', e => {
-        const k = (e.key || '').toLowerCase();
-        if (e.keyCode === 123) return e.preventDefault(); // F12
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i','j','c'].includes(k)) return e.preventDefault();
-        if ((e.ctrlKey || e.metaKey) && ['u','s'].includes(k)) return e.preventDefault();
-      }, { capture:true });
-      // Prosta heurystyka devtools
-      const detect = () => {
-        const wDiff = window.outerWidth - window.innerWidth;
-        const hDiff = window.outerHeight - window.innerHeight;
-        return wDiff > 160 || hDiff > 160;
-      };
-      setInterval(() => {
-        if (detect()) {
-          document.body.innerHTML = '';
-          location.replace('/');
-        }
-      }, 800);
-      // Tłumienie konsoli
-      ['log','info','warn','error','debug'].forEach(m => { try { console[m] = () => {}; } catch {} });
-    } catch {}
+    // Usunięto wykrywanie DevTools/blokady — powodowało problemy na iPhone.
   })();
   </script>
 </body>

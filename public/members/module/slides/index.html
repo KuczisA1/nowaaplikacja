@@ -24,8 +24,7 @@
               if (type) sessionStorage.setItem('slides_type', type);
             } catch {}
             if (!keep) {
-              const basePath = location.pathname.replace(/[^\/]*$/, '');
-              history.replaceState(null, '', basePath || '/');
+              history.replaceState(null, '', '/');
             }
           }
         } catch {}

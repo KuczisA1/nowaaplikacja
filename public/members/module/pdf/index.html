@@ -84,50 +84,7 @@
     </div>
 
     <script>
-      // Minimalne wyciszenie konsoli (utrudnienie, nie gwarancja)
-      try {
-        ["log","debug","info","warn","error"].forEach(fn => {
-          const orig = console[fn];
-          console[fn] = function(...args) {
-            // Komentarz: celowo pusto; przytrzymaj jednak oryginał w razie potrzeby debugowania lokalnego
-            // orig.apply(console, args);
-          }
-        });
-      } catch {}
-
-      // Blokada kontekstowego menu i skrótów do DevTools / podglądu źródła
-      document.addEventListener('contextmenu', (e) => e.preventDefault());
-      document.addEventListener('keydown', (e) => {
-        // F12
-        if (e.key === 'F12' || e.keyCode === 123) { e.preventDefault(); e.stopPropagation(); }
-        // Ctrl+Shift+I/J/C/U, Cmd+Opt+I (Mac)
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['I','J','C'].includes(e.key.toUpperCase())) { e.preventDefault(); e.stopPropagation(); }
-        if ((e.ctrlKey || e.metaKey) && ['U'].includes(e.key.toUpperCase())) { e.preventDefault(); e.stopPropagation(); }
-      }, { capture: true });
-
-      // Wykrywanie DevTools i odświeżanie (best-effort)
-      (function devtoolsGuard(){
-        let tripped = false;
-        const threshold = 160; // szerokość/długość typowego docka DevTools
-        const checkDock = () => {
-          const w = Math.abs(window.outerWidth - window.innerWidth);
-          const h = Math.abs(window.outerHeight - window.innerHeight);
-          return (w > threshold || h > threshold);
-        };
-        const checkDebuggerPause = () => {
-          const t = performance.now();
-          debugger; // pauzuje tylko przy otwartych DevTools
-          return performance.now() - t > 50; // odchylenie ~50ms
-        };
-        const tick = () => {
-          if (tripped) return;
-          if (checkDock() || checkDebuggerPause()) {
-            tripped = true;
-            location.reload();
-          }
-        };
-        setInterval(tick, 1000);
-      })();
+      // Usunięto wykrywanie DevTools i blokady — powodowało problemy na iPhone.
 
       // Utilsy
       const qs = (s) => document.querySelector(s);
