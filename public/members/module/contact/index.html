@@ -1,5 +1,5 @@
-<!doctype html>
-<html lang="pl">
+<!DOCTYPE html>
+<html lang="pl" dir="ltr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -8,61 +8,69 @@
     <meta http-equiv="Cache-Control" content="no-store" />
     <meta name="robots" content="noindex, nofollow" />
 
-    <!-- Netlify Identity (wymagane do autouzupełniania e-maila) -->
+    <!-- Fontawesome for icons in the left column -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" />
+
+    <!-- Netlify Identity (auto-fill email when logged in) -->
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     <script defer src="/assets/js/auth.js"></script>
 
-    <!-- Style strony kontaktowej modułu -->
+    <!-- Page styles -->
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <main class="wrap">
-      <section class="card">
-        <header class="card-header">
-          <h1>Skontaktuj się z nami</h1>
-          <p class="subtitle">Masz pytanie o kurs lub zajęcia? Napisz.</p>
-        </header>
+    <div class="container">
+      <div class="content">
+        <div class="left-side">
+          <div class="address details">
+            <i class="fas fa-map-marker-alt"></i>
+            <div class="topic">Adres</div>
+            <div class="text-one">—</div>
+            <div class="text-two">—</div>
+          </div>
+          <div class="phone details">
+            <i class="fas fa-phone-alt"></i>
+            <div class="topic">Telefon</div>
+            <div class="text-one">—</div>
+            <div class="text-two">—</div>
+          </div>
+          <div class="email details">
+            <i class="fas fa-envelope"></i>
+            <div class="topic">E‑mail</div>
+            <div class="text-one">—</div>
+            <div class="text-two">—</div>
+          </div>
+        </div>
+        <div class="right-side">
+          <div class="topic-text">Wyślij wiadomość</div>
+          <p>Masz pytanie o kurs lub zajęcia? Napisz do nas.</p>
+          <form name="members-contact" method="POST" data-netlify="true" data-netlify-recaptcha="true">
+            <input type="hidden" name="form-name" value="members-contact" />
+            <input type="hidden" name="internal_note" value="wiadomość wysłana z formularza na stronie w members" />
 
-        <form name="members-contact" method="POST" data-netlify="true" data-netlify-recaptcha="true" class="contact-form">
-          <!-- Wymagane dla Netlify Forms, gdy form jest obsługiwany statycznie -->
-          <input type="hidden" name="form-name" value="members-contact" />
-
-          <!-- Pole wewnętrzne (ukryte) – info techniczna dla mnie -->
-          <input type="hidden" name="internal_note" value="wiadomość wysłana z formularza na stronie w members" />
-
-          <div class="row two-cols">
-            <div class="field">
-              <label for="name">Imię i nazwisko</label>
-              <input id="name" name="name" type="text" placeholder="Jan Kowalski" required />
+            <div class="input-box">
+              <input id="name" name="name" type="text" placeholder="Twoje imię i nazwisko" required />
             </div>
-            <div class="field">
-              <label for="email">E-mail</label>
-              <input id="email" name="email" type="email" placeholder="twoj@email.pl" required />
+            <div class="input-box">
+              <input id="email" name="email" type="email" placeholder="Twój e‑mail" required />
             </div>
-          </div>
+            <div class="input-box message-box">
+              <textarea id="message" name="message" placeholder="Twoja wiadomość..." required></textarea>
+            </div>
 
-          <div class="field">
-            <label for="subject">Przedmiot / poziom</label>
-            <input id="subject" name="subject" type="text" placeholder="np. Matematyka podstawowa" required />
-          </div>
+            <!-- Netlify reCAPTCHA -->
+            <div class="captcha" data-netlify-recaptcha="true"></div>
 
-          <div class="field">
-            <label for="message">Wiadomość</label>
-            <textarea id="message" name="message" rows="8" placeholder="Twoja wiadomość..." required></textarea>
-          </div>
-
-          <!-- Netlify Captcha -->
-          <div data-netlify-recaptcha="true" class="captcha"></div>
-
-          <div class="actions">
-            <button type="submit" class="btn">Wyślij</button>
-          </div>
-        </form>
-      </section>
-    </main>
+            <div class="button">
+              <input type="submit" value="Wyślij" />
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
 
     <script>
-      // Autouzupełnianie e-maila zalogowanego użytkownika Netlify Identity
+      // Autouzupełnianie e‑maila zalogowanego użytkownika Netlify Identity
       document.addEventListener('DOMContentLoaded', () => {
         const ID = window.netlifyIdentity;
         const emailInput = document.getElementById('email');
@@ -77,17 +85,60 @@
             const email = user.email || (user.user_metadata && user.user_metadata.email);
             if (email) {
               emailInput.value = email;
-              emailInput.readOnly = true; // żeby użytkownik nie zmieniał e-maila konta
+              emailInput.readOnly = true; // zablokuj zmianę e‑maila konta
             }
           } catch {}
         };
 
-        // Ustaw na init i na login (gdyby odświeżono token itp.)
         try { ID.on('init', applyEmail); } catch {}
         try { ID.on('login', applyEmail); } catch {}
-
-        // Spróbuj również od razu po krótkim opóźnieniu
         setTimeout(applyEmail, 200);
+      });
+    </script>
+    <script>
+      // Wysyłka formularza z dynamicznym przekierowaniem po sukcesie
+      document.addEventListener('DOMContentLoaded', () => {
+        const form = document.forms['members-contact'];
+        if (!form) return;
+
+        const encode = (data) => {
+          return Object.keys(data)
+            .map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(data[k]))
+            .join('&');
+        };
+
+        form.addEventListener('submit', async (e) => {
+          try {
+            e.preventDefault();
+            const formData = new FormData(form);
+            // Upewnij się, że form-name jest w payload
+            if (!formData.get('form-name')) {
+              formData.set('form-name', form.getAttribute('name') || 'members-contact');
+            }
+            // Zbuduj payload x-www-form-urlencoded (Netlify wymaga takiego formatu)
+            const payload = {};
+            for (const [key, value] of formData.entries()) {
+              payload[key] = value;
+            }
+
+            const res = await fetch('/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: encode(payload),
+            });
+
+            if (!res.ok) throw new Error('Form submit failed');
+
+            // Wybierz przekierowanie na podstawie stanu Identity
+            const ID = window.netlifyIdentity;
+            let target = '/login/';
+            try { if (ID && ID.currentUser()) target = '/members/'; } catch {}
+            location.replace(target);
+          } catch (err) {
+            // W razie błędu, zrób normalny submit jako fallback
+            form.submit();
+          }
+        }, { passive: false });
       });
     </script>
   </body>
