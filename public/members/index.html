@@ -2,25 +2,54 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="x-members" content="1" />
   <title>Strefa kursanta</title>
+  <meta http-equiv="Cache-Control" content="no-store" />
+
+  <!-- Netlify Identity + auth helpers -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
   <script defer src="/assets/js/auth.js"></script>
+
   <style>
-    html,body{height:100%;margin:0}
-    body{display:grid;place-items:center;font:16px/1.4 system-ui,Segoe UI,Roboto,Arial}
-    .card{padding:24px 28px;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
-    .row{display:flex;gap:12px;align-items:center;justify-content:center}
-    .btn{border:none;border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer;background:#ef4444;color:white}
+    html, body { height: 100%; margin: 0; }
+    body { background: #0b0b0b; }
+
+    /* Zawsze widoczny przycisk wylogowania (prawy górny róg) */
+    #logout-link {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 1000;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #ef4444;
+      color: #fff;
+      box-shadow: 0 4px 18px rgba(0,0,0,.25);
+    }
+    #logout-link:hover { filter: brightness(0.95); }
+
+    /* Pełnoekranowy, responsywny embed kursu */
+    .embed-wrap { position: fixed; inset: 0; }
+    .embed-frame {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      border: 0; background: #111;
+    }
   </style>
-  <meta http-equiv="Cache-Control" content="no-store" />
 </head>
 <body>
-  <div class="card">
-    <div class="row">
-      <button id="logout-link" class="btn">Wyloguj</button>
-    </div>
+  <!-- Zawsze widoczny przycisk wylogowania -->
+  <button id="logout-link">Wyloguj</button>
+
+  <!-- Skalujący się na całą stronę embed kursu -->
+  <div class="embed-wrap">
+    <iframe class="embed-frame" src="/members/module/kurs/Kurs.html" allow="fullscreen"></iframe>
   </div>
+
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (typeof netlifyIdentity !== 'undefined') {
@@ -35,7 +64,6 @@
             try { netlifyIdentity.logout(); } catch { location.replace('/login/?loggedout=1'); }
           });
         }
-        // jeśli ktoś tu trafi bez zalogowania, auth.js od razu cofnie na /login/
       }
     });
   </script>
