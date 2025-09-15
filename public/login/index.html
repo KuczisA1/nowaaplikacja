@@ -96,12 +96,16 @@
             flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
           }
         } catch (err) {
-          // Map known webhook errors (no role/inactive user) to a friendly message
+          // Map known errors to friendlier PL messages
           const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || '');
           const lower = msg.toLowerCase();
           const isWebhookError = lower.includes('webhook') && (lower.includes('login') || lower.includes('signup') || lower.includes('failed to handle'));
+          const isInvalidGrant = lower.includes('invalid_grant') || lower.includes('no user found') || lower.includes('password invalid');
+
           if (isWebhookError) {
             flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
+          } else if (isInvalidGrant) {
+            flash(`Nie ma takiego użytkownika z e‑mailem "${email}" lub hasło jest nieprawidłowe.`, "error");
           } else {
             flash("Błąd logowania: " + (msg || 'Nieznany błąd'), "error");
           }
