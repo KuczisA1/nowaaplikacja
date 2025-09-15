@@ -96,7 +96,15 @@
             flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
           }
         } catch (err) {
-          flash("Błąd logowania: " + (err?.message || err), "error");
+          // Map known webhook errors (no role/inactive user) to a friendly message
+          const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || '');
+          const lower = msg.toLowerCase();
+          const isWebhookError = lower.includes('webhook') && (lower.includes('login') || lower.includes('signup') || lower.includes('failed to handle'));
+          if (isWebhookError) {
+            flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
+          } else {
+            flash("Błąd logowania: " + (msg || 'Nieznany błąd'), "error");
+          }
         } finally {
           setBusy(loginBtn, false);
         }
