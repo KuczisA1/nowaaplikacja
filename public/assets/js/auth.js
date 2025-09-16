@@ -61,7 +61,10 @@
 
   const setNFJwtCookie = async (user) => {
     try {
-      if (!user) return;
+      if (!user || !isActiveUser(user)) {
+        clearNFJwtCookie();
+        return;
+      }
       const token = await user.jwt();
       if (token) setCookie(NF_JWT_COOKIE, token, { sameSite: 'Lax' });
     } catch {}
