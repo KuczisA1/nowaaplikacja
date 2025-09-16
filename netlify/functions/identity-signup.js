@@ -3,9 +3,21 @@
 
 exports.handler = async (event) => {
   try {
-    // You can enrich metadata here if needed.
-    // const payload = JSON.parse(event.body || '{}');
-    return { statusCode: 200, body: JSON.stringify({}) };
+    const payload = JSON.parse(event.body || '{}');
+    const user = payload && payload.user ? payload.user : {};
+    const appMeta = user.app_metadata || {};
+    const existingRoles = Array.isArray(appMeta.roles) ? appMeta.roles : [];
+    const roles = Array.from(new Set([...existingRoles, 'member']));
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        app_metadata: {
+          ...appMeta,
+          roles
+        }
+      })
+    };
   } catch (e) {
     return { statusCode: 200, body: JSON.stringify({}) };
   }

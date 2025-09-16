@@ -12,8 +12,10 @@
 </head>
 <body>
   <div class="wrapper">
-    <!-- Usunięto górny przycisk (pozostał tylko przycisk w formularzu) -->
-
+    <div class="tabs" role="tablist">
+      <button class="tab-btn active" data-target="login" type="button">Logowanie</button>
+      <button class="tab-btn" data-target="signup" type="button">Rejestracja</button>
+    </div>
     <div id="flash" class="flash" aria-live="polite"></div>
 
     <!-- Logowanie -->
@@ -29,9 +31,23 @@
       </div>
       <button id="login-submit" type="submit">Zaloguj się</button>
       <p class="helper">Zapomniałeś hasła? <a id="recover-link" href="#">Odzyskaj dostęp</a></p>
+      <p class="helper">Nie masz konta? <a class="to-signup" href="#">Zarejestruj się</a></p>
     </form>
 
-    <!-- Brak rejestracji: konta zakładane tylko przez administratora w Netlify -->
+    <!-- Rejestracja -->
+    <form id="signup-form" class="form" autocomplete="on" novalidate>
+      <h2>Rejestracja</h2>
+      <div class="input-field">
+        <input type="email" id="signup-email" required autocomplete="email" />
+        <label for="signup-email">Email</label>
+      </div>
+      <div class="input-field">
+        <input type="password" id="signup-password" required autocomplete="new-password" minlength="6" />
+        <label for="signup-password">Hasło</label>
+      </div>
+      <button id="signup-submit" type="submit">Załóż konto</button>
+      <p class="helper">Masz już konto? <a class="to-login" href="#">Przejdź do logowania</a></p>
+    </form>
   </div>
 
   <script>
@@ -49,19 +65,76 @@
       if (btn.dataset.label) btn.textContent = busy ? "Przetwarzam..." : btn.dataset.label;
     };
 
-    // Tabs
-    // Zakładki zostały usunięte (brak rejestracji)
+    const LOCAL_SESSION_KEY = "chem_session_id";
+    const saveLocalSessionId = (sid) => { try { if (sid) localStorage.setItem(LOCAL_SESSION_KEY, sid); } catch {} };
+    const clearLocalSessionId = () => { try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch {} };
+    const setNFJwtCookie = async (user) => {
+      if (!user) return;
+      try {
+        const token = await user.jwt();
+        if (!token) return;
+        const secure = location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `nf_jwt=${token}; Path=/; SameSite=Lax${secure}`;
+      } catch {}
+    };
+    const afterLogin = async (user) => {
+      if (!user) return;
+      try {
+        const sid = user.app_metadata && user.app_metadata.session_id;
+        if (sid) saveLocalSessionId(sid); else clearLocalSessionId();
+      } catch {}
+      await setNFJwtCookie(user);
+      flash("Zalogowano. Przenoszę...", "success");
+      setTimeout(() => { window.location.replace("/members/"); }, 250);
+    };
 
     document.addEventListener("DOMContentLoaded", () => {
+      const tabs = Array.from(document.querySelectorAll(".tab-btn"));
+      const forms = {
+        login: document.getElementById("login-form"),
+        signup: document.getElementById("signup-form")
+      };
+      const showForm = (target) => {
+        const available = Object.keys(forms);
+        if (!available.includes(target)) target = "login";
+        tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.target === target));
+        available.forEach((key) => {
+          const form = forms[key];
+          if (!form) return;
+          if (key === target) form.classList.add("active"); else form.classList.remove("active");
+        });
+      };
+      tabs.forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          showForm(btn.dataset.target || "login");
+          flash("");
+        });
+      });
+      Array.from(document.querySelectorAll(".to-login")).forEach((link) => {
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          showForm("login");
+          flash("");
+        });
+      });
+      Array.from(document.querySelectorAll(".to-signup")).forEach((link) => {
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          showForm("signup");
+          flash("");
+        });
+      });
+
       // Jeżeli już zalogowany i aktywny → przenieś do members
       netlifyIdentity.on("init", (user) => {
         if (user) {
+          setNFJwtCookie(user);
           try {
-            const roles = (user.app_metadata && user.app_metadata.roles) || [];
-            if (roles.includes('admin') || roles.includes('active')) {
-              window.location.replace("/members/");
-            }
-          } catch(e) {}
+            const sid = user.app_metadata && user.app_metadata.session_id;
+            if (sid) saveLocalSessionId(sid);
+          } catch {}
+          window.location.replace("/members/");
         }
       });
       netlifyIdentity.init();
@@ -81,36 +154,77 @@
           await netlifyIdentity.gotrue.login(email, password, true);
           try { await netlifyIdentity.refresh(); } catch {}
           const user = netlifyIdentity.currentUser();
-          const roles = (user && user.app_metadata && user.app_metadata.roles) || [];
-          const active = roles.includes('admin') || roles.includes('active');
-          if (active) {
-            // Set nf_jwt cookie so role-based redirects work before navigating
-            try {
-              const token = await user.jwt();
-              const secure = location.protocol === 'https:' ? '; Secure' : '';
-              document.cookie = `nf_jwt=${token}; Path=/; SameSite=Lax${secure}`;
-            } catch {}
-            flash("Zalogowano. Przenoszę...", "success");
-            setTimeout(() => { window.location.replace("/members/"); }, 250);
+          if (user) {
+            await afterLogin(user);
           } else {
-            flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
+            flash("Zalogowano, ale nie udało się pobrać danych użytkownika.", "error");
           }
         } catch (err) {
           // Map known errors to friendlier PL messages
           const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || '');
           const lower = msg.toLowerCase();
-          const isWebhookError = lower.includes('webhook') && (lower.includes('login') || lower.includes('signup') || lower.includes('failed to handle'));
           const isInvalidGrant = lower.includes('invalid_grant') || lower.includes('no user found') || lower.includes('password invalid');
+          const isUnconfirmed = lower.includes('confirmation') || lower.includes('confirm') || lower.includes('email not confirmed');
 
-          if (isWebhookError) {
-            flash("Konto nieaktywne – zgłoś się do administratora w celu aktywacji.", "warn");
-          } else if (isInvalidGrant) {
+          if (isInvalidGrant) {
             flash(`Nie ma takiego użytkownika z e‑mailem "${email}" lub hasło jest nieprawidłowe.`, "error");
+          } else if (isUnconfirmed) {
+            flash("Potwierdź swój adres e‑mail, zanim zalogujesz się do aplikacji.", "warn");
           } else {
             flash("Błąd logowania: " + (msg || 'Nieznany błąd'), "error");
           }
         } finally {
           setBusy(loginBtn, false);
+        }
+      });
+
+      // Rejestracja
+      const signupBtn = document.getElementById("signup-submit");
+      if (signupBtn) signupBtn.dataset.label = "Załóż konto";
+      document.getElementById("signup-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        flash("");
+        const email = document.getElementById("signup-email").value.trim();
+        const password = document.getElementById("signup-password").value;
+        if (!email || !password) return flash("Podaj email oraz hasło.", "warn");
+        try {
+          setBusy(signupBtn, true);
+          await netlifyIdentity.gotrue.signup(email, password);
+
+          // Po rejestracji spróbuj zalogować i przenieść użytkownika.
+          let autoLoginSucceeded = false;
+          try {
+            await netlifyIdentity.gotrue.login(email, password, true);
+            try { await netlifyIdentity.refresh(); } catch {}
+            const user = netlifyIdentity.currentUser();
+            if (user) {
+              await afterLogin(user);
+              autoLoginSucceeded = true;
+            }
+          } catch (loginErr) {
+            const loginMsg = (loginErr && (loginErr.message || loginErr.msg)) ? String(loginErr.message || loginErr.msg) : '';
+            if (String(loginMsg).toLowerCase().includes('confirm')) {
+              flash("Konto utworzone. Sprawdź skrzynkę i potwierdź adres e‑mail, aby się zalogować.", "success");
+            } else {
+              flash("Konto utworzone, ale nie udało się automatycznie zalogować. Spróbuj zalogować się ręcznie.", "warn");
+            }
+          }
+
+          if (!autoLoginSucceeded) {
+            showForm("login");
+          }
+        } catch (err) {
+          const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || '');
+          const lower = msg.toLowerCase();
+          if (lower.includes('email') && lower.includes('exists')) {
+            flash(`Konto z adresem "${email}" już istnieje.`, "error");
+          } else if (lower.includes('weak-password') || lower.includes('short')) {
+            flash("Hasło jest zbyt krótkie. Podaj dłuższe hasło.", "error");
+          } else {
+            flash("Nie udało się utworzyć konta: " + (msg || 'Nieznany błąd'), "error");
+          }
+        } finally {
+          setBusy(signupBtn, false);
         }
       });
 
@@ -126,6 +240,18 @@
           flash("Nie udało się wysłać linku: " + (err?.message || err), "error");
         }
       });
+
+      // Ustaw widok zakładek na podstawie parametrów w URL
+      try {
+        const params = new URLSearchParams(location.search);
+        if (params.has('signup') || params.get('view') === 'signup') {
+          showForm('signup');
+        } else {
+          showForm('login');
+        }
+      } catch {
+        showForm('login');
+      }
     });
   </script>
 </body>
