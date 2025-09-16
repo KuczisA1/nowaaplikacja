@@ -134,6 +134,12 @@
               highlight = true;
               fromParam = true;
             }
+            if (fromParam) {
+              params.delete('internal');
+              const qs = params.toString();
+              const next = qs ? `?${qs}` : location.pathname;
+              history.replaceState({}, '', next);
+            }
           } catch {}
           if (!fromParam) {
             const stored = loadStoredInternal();
