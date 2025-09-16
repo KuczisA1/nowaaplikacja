@@ -68,8 +68,12 @@
     const LOCAL_SESSION_KEY = "chem_session_id";
     const saveLocalSessionId = (sid) => { try { if (sid) localStorage.setItem(LOCAL_SESSION_KEY, sid); } catch {} };
     const clearLocalSessionId = () => { try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch {} };
+    const hasAccess = (user) => {
+      const roles = (user && user.app_metadata && user.app_metadata.roles) || [];
+      return roles.includes('admin') || roles.includes('active');
+    };
     const setNFJwtCookie = async (user) => {
-      if (!user) return;
+      if (!user || !hasAccess(user)) return;
       try {
         const token = await user.jwt();
         if (!token) return;
@@ -79,6 +83,12 @@
     };
     const afterLogin = async (user) => {
       if (!user) return;
+      if (!hasAccess(user)) {
+        flash("Konto nieaktywne – poproś administratora o aktywację.", "warn");
+        try { await netlifyIdentity.logout(); } catch {}
+        clearLocalSessionId();
+        return;
+      }
       try {
         const sid = user.app_metadata && user.app_metadata.session_id;
         if (sid) saveLocalSessionId(sid); else clearLocalSessionId();
@@ -127,15 +137,20 @@
       });
 
       // Jeżeli już zalogowany i aktywny → przenieś do members
-      netlifyIdentity.on("init", (user) => {
-        if (user) {
-          setNFJwtCookie(user);
-          try {
-            const sid = user.app_metadata && user.app_metadata.session_id;
-            if (sid) saveLocalSessionId(sid);
-          } catch {}
-          window.location.replace("/members/");
+      netlifyIdentity.on("init", async (user) => {
+        if (!user) return;
+        if (!hasAccess(user)) {
+          flash("Konto nieaktywne – poproś administratora o aktywację.", "warn");
+          try { await netlifyIdentity.logout(); } catch {}
+          clearLocalSessionId();
+          return;
         }
+        await setNFJwtCookie(user);
+        try {
+          const sid = user.app_metadata && user.app_metadata.session_id;
+          if (sid) saveLocalSessionId(sid);
+        } catch {}
+        window.location.replace("/members/");
       });
       netlifyIdentity.init();
 
@@ -165,9 +180,12 @@
           const lower = msg.toLowerCase();
           const isInvalidGrant = lower.includes('invalid_grant') || lower.includes('no user found') || lower.includes('password invalid');
           const isUnconfirmed = lower.includes('confirmation') || lower.includes('confirm') || lower.includes('email not confirmed');
+          const isInactive = lower.includes('inactive') || lower.includes('nieaktywne') || lower.includes('unauthorized') || lower.includes('webhook');
 
           if (isInvalidGrant) {
             flash(`Nie ma takiego użytkownika z e‑mailem "${email}" lub hasło jest nieprawidłowe.`, "error");
+          } else if (isInactive) {
+            flash("Konto nieaktywne – poproś administratora o aktywację.", "warn");
           } else if (isUnconfirmed) {
             flash("Potwierdź swój adres e‑mail, zanim zalogujesz się do aplikacji.", "warn");
           } else {
@@ -203,8 +221,11 @@
             }
           } catch (loginErr) {
             const loginMsg = (loginErr && (loginErr.message || loginErr.msg)) ? String(loginErr.message || loginErr.msg) : '';
-            if (String(loginMsg).toLowerCase().includes('confirm')) {
+            const lowerLoginMsg = loginMsg.toLowerCase();
+            if (lowerLoginMsg.includes('confirm')) {
               flash("Konto utworzone. Sprawdź skrzynkę i potwierdź adres e‑mail, aby się zalogować.", "success");
+            } else if (lowerLoginMsg.includes('inactive') || lowerLoginMsg.includes('nieaktywne') || lowerLoginMsg.includes('unauthorized') || lowerLoginMsg.includes('webhook')) {
+              flash("Konto utworzone. Administrator musi je aktywować, zanim zalogujesz się do aplikacji.", "warn");
             } else {
               flash("Konto utworzone, ale nie udało się automatycznie zalogować. Spróbuj zalogować się ręcznie.", "warn");
             }

@@ -1,7 +1,6 @@
 /*
   Unified auth/session helper for Netlify Identity.
-  - Obsługuje logowanie oraz rejestrację (nowi użytkownicy dostają domyślną rolę `member`).
-  - Dowolny uwierzytelniony użytkownik z rolą `member`, `active` lub `admin` ma dostęp do `/members/*`.
+  - Rejestracja dostępna dla każdego, ale dostęp do `/members/*` wymaga roli `active` lub `admin`.
   - Rotates a per-login session_id in identity-login function to enforce a single active session.
   - When a user logs in elsewhere, old sessions are logged out on refresh/visibility change.
   - Sets the `nf_jwt` cookie after login to enable role-based redirects.
@@ -39,11 +38,8 @@
   };
 
   const isActiveUser = (user) => {
-    if (!user) return false;
     const roles = getRoles(user);
-    if (!roles.length) return true;
-    if (roles.includes('blocked') || roles.includes('inactive')) return false;
-    return roles.includes('member') || roles.includes('active') || roles.includes('admin');
+    return roles.includes('active') || roles.includes('admin');
   };
 
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -113,7 +109,7 @@
       try { await ID.logout(); } catch {}
       clearNFJwtCookie();
       clearLocalSessionId();
-      location.replace(LOGIN_PATH + '?unauthorized=1');
+      location.replace(LOGIN_PATH + '?inactive=1');
       return false;
     }
     return true;
@@ -169,8 +165,8 @@
       const p = new URLSearchParams(location.search);
       const flashBox = document.getElementById('flash');
       if (flashBox) {
-        if (p.has('unauthorized')) {
-          flashBox.textContent = 'Twoje konto nie ma dostępu do tej sekcji.';
+        if (p.has('inactive')) {
+          flashBox.textContent = 'Konto nieaktywne – poproś administratora o aktywację.';
           flashBox.className = 'flash warn';
         }
         if (p.has('loggedout')) {

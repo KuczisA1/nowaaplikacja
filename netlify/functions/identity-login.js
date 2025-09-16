@@ -9,14 +9,18 @@ exports.handler = async (event) => {
     const appMeta = user.app_metadata || {};
     const roles = Array.isArray(appMeta.roles) ? appMeta.roles : [];
 
-    const blocked = roles.includes('blocked') || roles.includes('inactive');
+    const isActive = roles.includes('active') || roles.includes('admin');
+    if (!isActive) {
+      return {
+        statusCode: 401,
+        body: JSON.stringify({
+          error: 'Konto nieaktywne – poproś administratora o aktywację.'
+        })
+      };
+    }
 
     // Generate a new session id for this login (forces other devices out on next refresh).
     const sessionId = (crypto.randomUUID && crypto.randomUUID()) || crypto.randomBytes(16).toString('hex');
-
-    const normalizedRoles = blocked
-      ? roles
-      : Array.from(new Set([...roles, 'member']));
 
     // Merge new app_metadata back. Netlify Identity will persist these fields.
     return {
@@ -24,7 +28,6 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         app_metadata: {
           ...appMeta,
-          roles: normalizedRoles,
           session_id: sessionId
         }
       })

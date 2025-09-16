@@ -10,7 +10,7 @@
   from = "/members/*"
   to = "/members/:splat"
   status = 200
-  conditions = { Role = ["member", "active", "admin"] }
+  conditions = { Role = ["active"] }
 
 ## Fallback: anyone without the role gets redirected to login.
 [[redirects]]
