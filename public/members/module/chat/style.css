@@ -21,6 +21,7 @@
 
   --control-h: 52px;
   --chip-h: 42px;
+  --prompt-gap: clamp(210px, 26vh, 320px);
 }
 
 body.dark, [data-theme="dark"]{
@@ -81,7 +82,7 @@ a{ color: inherit; text-decoration: none; }
 .container{
   max-width: 1000px;
   margin: 0 auto;
-  padding: 24px 16px calc(220px + env(safe-area-inset-bottom)); /* miejsce na dok z inputem */
+  padding: 24px 16px calc(var(--prompt-gap) + env(safe-area-inset-bottom)); /* miejsce na dok z inputem */
   min-height: 100svh;
   position: relative;
 }
@@ -193,6 +194,13 @@ a{ color: inherit; text-decoration: none; }
   gap: 12px;
   margin: 6px 0 24px;
   min-height: 28vh;
+  position: relative;
+}
+.chats-container::after{
+  content: '';
+  display: block;
+  height: calc(var(--prompt-gap) * 0.55);
+  pointer-events: none;
 }
 .chat, .message{
   background: var(--surface);
@@ -209,7 +217,12 @@ a{ color: inherit; text-decoration: none; }
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 20;
-  background: linear-gradient(180deg, transparent, color-mix(in oklab, var(--bg), #000 4%));
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--bg), transparent 10%) 0%,
+    color-mix(in oklab, var(--bg), #000 6%) 45%,
+    color-mix(in oklab, var(--bg), #000 10%) 100%
+  );
+  backdrop-filter: blur(14px);
   padding: 12px 8px calc(18px + env(safe-area-inset-bottom));
 }
 
@@ -381,12 +394,25 @@ a{ color: inherit; text-decoration: none; }
   .prompt-form{
     grid-template-columns: 1fr;
   }
+  .suggestions{
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(210px, 80%);
+    overflow-x: auto;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+    scroll-snap-type: x mandatory;
+  }
+  .suggestions-item{
+    scroll-snap-align: start;
+  }
 }
 
 @media (max-width: 480px){
   body{ font-size: 17.5px; }
   .prompt-container{ padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
   .prompt-input{ min-height: 56px; }
+  .chats-container::after{ height: calc(var(--prompt-gap) * 0.7); }
 }
 
 /* Scrollbary */

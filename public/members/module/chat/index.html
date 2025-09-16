@@ -11,6 +11,19 @@
     <meta http-equiv="Cache-Control" content="no-store" />
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     <script defer src="/assets/js/auth.js"></script>
+    <script>
+      (function loadStoredTheme() {
+        try {
+          var stored = localStorage.getItem('chem.theme');
+          if (!stored && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            stored = 'dark';
+          }
+          document.documentElement.dataset.theme = stored === 'dark' ? 'dark' : 'light';
+        } catch (err) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
 
     <!-- Ikony Google (Material Symbols) -->
     <link
@@ -167,6 +180,7 @@
             id="theme-toggle-btn"
             class="material-symbols-rounded"
             title="Przełącz motyw"
+            aria-label="Przełącz motyw"
           >
             light_mode
           </button>

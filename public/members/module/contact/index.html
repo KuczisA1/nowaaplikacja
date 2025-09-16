@@ -44,6 +44,10 @@
         <div class="right-side">
           <div class="topic-text">Wyślij wiadomość</div>
           <p>Masz pytanie o kurs lub zajęcia? Napisz do nas.</p>
+          <div id="internal-banner" class="internal-banner" hidden>
+            <span class="label">Wiadomość wewnętrzna</span>
+            <span id="internal-banner-text"></span>
+          </div>
           <form name="members-contact" method="POST" data-netlify="true" data-netlify-recaptcha="true">
             <input type="hidden" name="form-name" value="members-contact" />
             <input type="hidden" name="internal_note" value="wiadomość wysłana z formularza na stronie w members" />
@@ -100,6 +104,36 @@
       document.addEventListener('DOMContentLoaded', () => {
         const form = document.forms['members-contact'];
         if (!form) return;
+
+        const internalField = form.querySelector('input[name="internal_note"]');
+        const banner = document.getElementById('internal-banner');
+        const bannerText = document.getElementById('internal-banner-text');
+        const defaultInternal = internalField ? internalField.value : '';
+
+        const applyInternalParam = () => {
+          let note = defaultInternal;
+          let highlight = false;
+          try {
+            const params = new URLSearchParams(location.search);
+            const raw = (params.get('internal') || '').trim();
+            if (raw) {
+              note = raw.slice(0, 240);
+              highlight = true;
+            }
+          } catch {}
+          if (internalField) internalField.value = note;
+          if (banner && bannerText) {
+            if (highlight) {
+              bannerText.textContent = note;
+              banner.hidden = false;
+            } else {
+              banner.hidden = true;
+              bannerText.textContent = '';
+            }
+          }
+        };
+
+        applyInternalParam();
 
         const encode = (data) => {
           return Object.keys(data)

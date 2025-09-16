@@ -73,6 +73,27 @@ body{
   font-weight: 600;
   color: #3e2093;
 }
+.internal-banner{
+  display: block;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(62, 32, 147, 0.25);
+  background: rgba(62, 32, 147, 0.08);
+  color: #2b1678;
+  line-height: 1.4;
+}
+.internal-banner .label{
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.internal-banner[hidden]{
+  display: none !important;
+}
 .right-side .input-box{
   height: 50px;
   width: 100%;

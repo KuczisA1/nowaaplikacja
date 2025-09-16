@@ -34,19 +34,51 @@ const API = {
     maturaTemplate: $('#matura-system-prompt'),
   };
 
+  function prefersDark(){
+    try { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+    catch { return false; }
+  }
+  function loadInitialTheme(){
+    try {
+      const saved = localStorage.getItem('chem.theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch {}
+    return prefersDark() ? 'dark' : 'light';
+  }
+
   const state = {
     matura: localStorage.getItem('chem.matura') === '1',
     busy: false,
     aborter: null,
     messages: [],
-    theme: localStorage.getItem('chem.theme') || 'light',
+    theme: loadInitialTheme(),
     attachment: null,
   };
 
   // ---------- Init ----------
-  function initTheme(){ if (state.theme === 'dark') document.body.classList.add('dark'); }
+  function applyTheme(theme, persist = true){
+    const next = theme === 'dark' ? 'dark' : 'light';
+    state.theme = next;
+    if (persist) {
+      try { localStorage.setItem('chem.theme', next); } catch {}
+    }
+    const dark = next === 'dark';
+    document.body.classList.toggle('dark', dark);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    updateThemeButton();
+  }
+
+  function updateThemeButton(){
+    if (!els.themeBtn) return;
+    const dark = state.theme === 'dark';
+    const label = dark ? 'Włącz jasny motyw' : 'Włącz ciemny motyw';
+    els.themeBtn.textContent = dark ? 'dark_mode' : 'light_mode';
+    els.themeBtn.setAttribute('aria-label', label);
+    els.themeBtn.title = label;
+  }
+
   function bootstrap(){
-    initTheme();
+    applyTheme(state.theme, false);
     setMatura(state.matura);
 
     on(els.suggestions, 'click', (e) => {
@@ -113,7 +145,7 @@ const API = {
   }
 
   // ---------- Theme ----------
-  function toggleTheme(){ const dark=document.body.classList.toggle('dark'); localStorage.setItem('chem.theme', dark?'dark':'light'); }
+  function toggleTheme(){ applyTheme(state.theme === 'dark' ? 'light' : 'dark'); }
 
   // ---------- Submit ----------
   async function handlePromptSubmit(e){
