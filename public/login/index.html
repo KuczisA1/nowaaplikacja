@@ -42,7 +42,7 @@
         <label for="signup-email">Email</label>
       </div>
       <div class="input-field">
-        <input type="password" id="signup-password" required autocomplete="new-password" minlength="6" />
+        <input type="password" id="signup-password" required autocomplete="new-password" minlength="10" />
         <label for="signup-password">Hasło</label>
       </div>
       <button id="signup-submit" type="submit">Załóż konto</button>
@@ -58,7 +58,7 @@
         <label for="token-email">Email</label>
       </div>
       <div class="input-field" id="token-password-row">
-        <input type="password" id="token-password" autocomplete="new-password" minlength="6" />
+        <input type="password" id="token-password" autocomplete="new-password" minlength="10" />
         <label for="token-password" id="token-password-label">Hasło</label>
       </div>
       <button id="token-submit" type="submit">Zapisz</button>
@@ -80,6 +80,8 @@
       btn.dataset.busy = busy ? "1" : "0";
       if (btn.dataset.label) btn.textContent = busy ? "Przetwarzam..." : btn.dataset.label;
     };
+
+    const MIN_PASSWORD_LENGTH = 10;
 
     const parseHashParams = () => {
       const hash = (location.hash || "").replace(/^#/, "");
@@ -267,6 +269,7 @@
       const tokenPasswordInput = document.getElementById("token-password");
       const tokenPasswordLabel = document.getElementById("token-password-label");
       const tokenSubmit = document.getElementById("token-submit");
+      const tokenCancel = document.getElementById("token-cancel");
       if (tokenSubmit) tokenSubmit.dataset.label = tokenSubmit.textContent;
       let tokenFlowState = { type: "", token: "", email: "" };
       let tokenFlowActive = false;
@@ -297,8 +300,12 @@
         if (tokenPasswordInput) {
           tokenPasswordInput.value = "";
           tokenPasswordInput.required = showPassword && cfg.requirePassword !== false;
-          if (cfg.passwordMinLength) tokenPasswordInput.setAttribute("minlength", String(cfg.passwordMinLength));
-          else tokenPasswordInput.removeAttribute("minlength");
+          if (showPassword) {
+            const minLen = typeof cfg.passwordMinLength === "number" ? cfg.passwordMinLength : MIN_PASSWORD_LENGTH;
+            tokenPasswordInput.setAttribute("minlength", String(minLen));
+          } else {
+            tokenPasswordInput.removeAttribute("minlength");
+          }
           if (cfg.passwordAutocomplete) tokenPasswordInput.setAttribute("autocomplete", cfg.passwordAutocomplete);
           else tokenPasswordInput.setAttribute("autocomplete", "new-password");
         }
@@ -309,6 +316,13 @@
           tokenSubmit.dataset.label = label;
         }
       };
+
+      if (tokenCancel) {
+        tokenCancel.addEventListener("click", (e) => {
+          e.preventDefault();
+          resetTokenFlow();
+        });
+      }
 
       const rawFlow = detectIdentityFlow();
       if (rawFlow.error || rawFlow.errorDescription) {
@@ -326,6 +340,7 @@
         if (!tokenSubmit || !tokenPasswordInput) return;
         const password = tokenPasswordInput.value;
         if (!password) return flash("Podaj hasło, aby kontynuować.", "warn");
+        if (password.length < MIN_PASSWORD_LENGTH) return flash(`Hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "warn");
         try {
           setBusy(tokenSubmit, true);
           const user = await netlifyIdentity.gotrue.acceptInvite(tokenFlowState.token, password);
@@ -346,6 +361,8 @@
             flash("Link zaproszeniowy jest nieprawidłowy lub został już użyty.", "error");
           } else if (msg.includes("expired")) {
             flash("Link zaproszeniowy wygasł. Poproś administratora o nowe zaproszenie.", "error");
+          } else if (msg.includes('password') && (msg.includes('short') || msg.includes('weak') || msg.includes('min'))) {
+            flash(`Hasło jest zbyt krótkie. Hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "error");
           } else {
             flash("Nie udało się aktywować zaproszenia: " + (errorMsg(err) || "Nieznany błąd"), "error");
           }
@@ -358,27 +375,50 @@
         if (!tokenSubmit || !tokenPasswordInput) return;
         const password = tokenPasswordInput.value;
         if (!password) return flash("Podaj nowe hasło.", "warn");
+        if (password.length < MIN_PASSWORD_LENGTH) return flash(`Hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "warn");
         try {
           setBusy(tokenSubmit, true);
-          const user = await netlifyIdentity.gotrue.recover(tokenFlowState.token, password);
+          const recoveredUser = await netlifyIdentity.gotrue.recover(tokenFlowState.token, true);
           try { await netlifyIdentity.refresh(); } catch {}
-          const current = netlifyIdentity.currentUser() || user;
-          if (current) {
-            if (hasAccess(current)) {
-              flash("Hasło zostało zmienione. Logowanie...", "success");
-              await afterLogin(current);
+          let current = netlifyIdentity.currentUser() || recoveredUser;
+          if (!current) {
+            flash("Zalogowano, ale nie udało się pobrać danych użytkownika. Spróbuj zalogować się ręcznie.", "warn");
+            resetTokenFlow();
+            return;
+          }
+          try {
+            await current.update({ password });
+            try { await netlifyIdentity.refresh(); } catch {}
+            current = netlifyIdentity.currentUser() || current;
+          } catch (updateErr) {
+            const updMsg = errorMsg(updateErr).toLowerCase();
+            if (updMsg.includes('password')) {
+              flash("Nie udało się ustawić hasła: " + (errorMsg(updateErr) || 'wymagania dotyczące hasła nie zostały spełnione.'), "error");
             } else {
-              flash("Hasło zostało zmienione, ale konto nie jest aktywne. Skontaktuj się z administratorem.", "warn");
-              try { await netlifyIdentity.logout(); } catch {}
-              clearLocalSessionId();
-              resetTokenFlow();
+              flash("Nie udało się ustawić hasła: " + (errorMsg(updateErr) || 'Nieznany błąd'), "error");
             }
+            return;
+          }
+
+          if (current && hasAccess(current)) {
+            flash("Hasło zostało zmienione. Logowanie...", "success");
+            await afterLogin(current);
+          } else if (current && !hasAccess(current)) {
+            flash("Hasło zostało zmienione, ale konto nie jest aktywne. Skontaktuj się z administratorem.", "warn");
+            try { await netlifyIdentity.logout(); } catch {}
+            clearLocalSessionId();
+            resetTokenFlow();
           } else {
             flash("Hasło zostało zmienione. Zaloguj się nowym hasłem.", "success");
             resetTokenFlow();
           }
         } catch (err) {
-          flash("Nie udało się ustawić hasła: " + (errorMsg(err) || 'Nieznany błąd'), "error");
+          const msg = errorMsg(err).toLowerCase();
+          if (msg.includes('password') && (msg.includes('short') || msg.includes('weak') || msg.includes('min'))) {
+            flash(`Nie udało się ustawić hasła: hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "error");
+          } else {
+            flash("Nie udało się ustawić hasła: " + (errorMsg(err) || 'Nieznany błąd'), "error");
+          }
         } finally {
           setBusy(tokenSubmit, false);
         }
@@ -478,7 +518,7 @@
             showEmailRow: false,
             showPasswordRow: true,
             passwordLabel: 'Ustaw hasło',
-            passwordMinLength: 6,
+            passwordMinLength: MIN_PASSWORD_LENGTH,
             submitLabel: 'Aktywuj konto',
             passwordAutocomplete: 'new-password'
           });
@@ -494,7 +534,7 @@
             showEmailRow: false,
             showPasswordRow: true,
             passwordLabel: 'Nowe hasło',
-            passwordMinLength: 6,
+            passwordMinLength: MIN_PASSWORD_LENGTH,
             submitLabel: 'Zapisz nowe hasło',
             passwordAutocomplete: 'new-password'
           });
@@ -585,6 +625,7 @@
         const email = document.getElementById("signup-email").value.trim();
         const password = document.getElementById("signup-password").value;
         if (!email || !password) return flash("Podaj email oraz hasło.", "warn");
+        if (password.length < MIN_PASSWORD_LENGTH) return flash(`Hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "warn");
         try {
           setBusy(signupBtn, true);
           await netlifyIdentity.gotrue.signup(email, password);
@@ -620,7 +661,7 @@
           if (lower.includes('email') && lower.includes('exists')) {
             flash(`Konto z adresem "${email}" już istnieje.`, "error");
           } else if (lower.includes('weak-password') || lower.includes('short')) {
-            flash("Hasło jest zbyt krótkie. Podaj dłuższe hasło.", "error");
+            flash(`Hasło jest zbyt krótkie. Hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "error");
           } else {
             flash("Nie udało się utworzyć konta: " + (msg || 'Nieznany błąd'), "error");
           }
