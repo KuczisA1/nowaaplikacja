@@ -109,18 +109,39 @@
         const banner = document.getElementById('internal-banner');
         const bannerText = document.getElementById('internal-banner-text');
         const defaultInternal = internalField ? internalField.value : '';
+        const STORAGE_KEY = 'chem.contact.internal';
+
+        const storeInternal = (note) => {
+          try {
+            if (note) sessionStorage.setItem(STORAGE_KEY, note);
+            else sessionStorage.removeItem(STORAGE_KEY);
+          } catch {}
+        };
+        const loadStoredInternal = () => {
+          try { return sessionStorage.getItem(STORAGE_KEY) || ''; }
+          catch { return ''; }
+        };
 
         const applyInternalParam = () => {
           let note = defaultInternal;
           let highlight = false;
+          let fromParam = false;
           try {
             const params = new URLSearchParams(location.search);
             const raw = (params.get('internal') || '').trim();
             if (raw) {
               note = raw.slice(0, 240);
               highlight = true;
+              fromParam = true;
             }
           } catch {}
+          if (!fromParam) {
+            const stored = loadStoredInternal();
+            if (stored) {
+              note = stored;
+              highlight = true;
+            }
+          }
           if (internalField) internalField.value = note;
           if (banner && bannerText) {
             if (highlight) {
@@ -131,6 +152,8 @@
               bannerText.textContent = '';
             }
           }
+          if (note !== defaultInternal) storeInternal(note);
+          else storeInternal('');
         };
 
         applyInternalParam();
@@ -167,9 +190,11 @@
             const ID = window.netlifyIdentity;
             let target = '/login/';
             try { if (ID && ID.currentUser()) target = '/members/'; } catch {}
+            storeInternal('');
             location.replace(target);
           } catch (err) {
             // W razie błędu, zrób normalny submit jako fallback
+            storeInternal('');
             form.submit();
           }
         }, { passive: false });
