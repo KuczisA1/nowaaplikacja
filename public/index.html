@@ -13,7 +13,24 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/waypoints/4.0.1/jquery.waypoints.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/OwlCarousel2/2.3.4/owl.carousel.min.js"></script>
     <!-- Netlify Identity -->
+    <script>
+        (function () {
+            if (location.hash && location.hash.includes('token')) {
+                try {
+                    const target = new URL('/login/', location.origin);
+                    const params = new URLSearchParams(location.search || '');
+                    params.forEach((value, key) => target.searchParams.set(key, value));
+                    target.hash = location.hash;
+                    location.replace(target.toString());
+                    return;
+                } catch (e) {
+                    location.replace('/login/');
+                }
+            }
+        })();
+    </script>
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+    <script defer src="/assets/js/auth.js"></script>
 
 </head>
 <body>
