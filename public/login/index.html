@@ -48,6 +48,22 @@
       <button id="signup-submit" type="submit">Załóż konto</button>
       <p class="helper">Masz już konto? <a class="to-login" href="#">Przejdź do logowania</a></p>
     </form>
+
+    <!-- Akcje po kliknięciu w linki z maili Identity -->
+    <form id="token-form" class="form" autocomplete="off" novalidate>
+      <h2 id="token-form-title">Działanie Identity</h2>
+      <p id="token-form-info" class="helper"></p>
+      <div class="input-field" id="token-email-row">
+        <input type="email" id="token-email" readonly />
+        <label for="token-email">Email</label>
+      </div>
+      <div class="input-field" id="token-password-row">
+        <input type="password" id="token-password" autocomplete="new-password" minlength="6" />
+        <label for="token-password" id="token-password-label">Hasło</label>
+      </div>
+      <button id="token-submit" type="submit">Zapisz</button>
+      <p class="helper"><a id="token-cancel" href="/login/">Wróć do logowania</a></p>
+    </form>
   </div>
 
   <script>
@@ -63,6 +79,103 @@
       btn.disabled = !!busy;
       btn.dataset.busy = busy ? "1" : "0";
       if (btn.dataset.label) btn.textContent = busy ? "Przetwarzam..." : btn.dataset.label;
+    };
+
+    const parseHashParams = () => {
+      const hash = (location.hash || "").replace(/^#/, "");
+      if (!hash) return {};
+      return hash.split("&").reduce((acc, piece) => {
+        if (!piece) return acc;
+        const [key, value = ""] = piece.split("=");
+        const k = decodeURIComponent(key || "");
+        const v = decodeURIComponent(value || "");
+        if (!k) return acc;
+        acc[k] = v;
+        return acc;
+      }, {});
+    };
+    const decodeEmailFromToken = (token) => {
+      if (!token || token.indexOf('.') === -1) return "";
+      try {
+        const base = token.split('.')[1];
+        if (!base) return "";
+        const normalized = base.replace(/-/g, '+').replace(/_/g, '/');
+        const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+        const json = atob(normalized + padding);
+        const payload = JSON.parse(json);
+        const email = payload.email || payload.email_new || payload.new_email || payload.sub;
+        return typeof email === 'string' ? email : "";
+      } catch (e) {
+        return "";
+      }
+    };
+    const detectIdentityFlow = () => {
+      const hashParams = parseHashParams();
+      let searchParams = null;
+      try { searchParams = new URLSearchParams(location.search || ""); }
+      catch { searchParams = new URLSearchParams(); }
+
+      const recognized = new Set(['invite', 'recovery', 'confirm', 'email-change']);
+      const flowParam = (searchParams.get('flow') || '').toLowerCase();
+      const typeParam = (searchParams.get('type') || hashParams.type || '').toLowerCase();
+
+      const getTokenFrom = (keys) => {
+        for (const key of keys) {
+          if (searchParams.has(key)) return searchParams.get(key) || '';
+          if (hashParams[key]) return hashParams[key];
+        }
+        return '';
+      };
+
+      const resolveFlow = () => {
+        if (recognized.has(flowParam)) return flowParam;
+        if (hashParams.invite_token || (hashParams.token && typeParam === 'invite')) return 'invite';
+        if (hashParams.recovery_token || typeParam === 'recovery') return 'recovery';
+        if (hashParams.email_change_token || typeParam === 'email_change') return 'email-change';
+        if (hashParams.confirmation_token || typeParam === 'confirmation' || typeParam === 'signup') return 'confirm';
+        return '';
+      };
+
+      const flow = resolveFlow();
+      if (!flow) {
+        return {
+          type: '',
+          token: '',
+          email: '',
+          hashParams,
+          searchParams,
+          error: searchParams.get('error') || hashParams.error || '',
+          errorDescription: searchParams.get('error_description') || hashParams.error_description || ''
+        };
+      }
+
+      const token = (() => {
+        const baseToken = searchParams.get('token');
+        if (baseToken) return baseToken;
+        if (flow === 'invite') return getTokenFrom(['invite_token', 'token']);
+        if (flow === 'recovery') return getTokenFrom(['recovery_token', 'token']);
+        if (flow === 'confirm') return getTokenFrom(['confirmation_token', 'token']);
+        if (flow === 'email-change') return getTokenFrom(['email_change_token', 'token']);
+        return '';
+      })();
+      const email = (() => {
+        const direct = searchParams.get('email') || searchParams.get('new_email');
+        if (direct) return direct;
+        const hashEmail = hashParams.email || hashParams.new_email || hashParams.email_new;
+        if (hashEmail) return hashEmail;
+        return decodeEmailFromToken(token);
+      })();
+
+      return {
+        type: flow,
+        token,
+        email,
+        rawType: typeParam,
+        hashParams,
+        searchParams,
+        error: searchParams.get('error') || hashParams.error || '',
+        errorDescription: searchParams.get('error_description') || hashParams.error_description || ''
+      };
     };
 
     const LOCAL_SESSION_KEY = "chem_session_id";
@@ -100,12 +213,14 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       const tabs = Array.from(document.querySelectorAll(".tab-btn"));
+      const tabsContainer = document.querySelector(".tabs");
       const forms = {
         login: document.getElementById("login-form"),
-        signup: document.getElementById("signup-form")
+        signup: document.getElementById("signup-form"),
+        token: document.getElementById("token-form")
       };
       const showForm = (target) => {
-        const available = Object.keys(forms);
+        const available = Object.keys(forms).filter((key) => forms[key]);
         if (!available.includes(target)) target = "login";
         tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.target === target));
         available.forEach((key) => {
@@ -114,6 +229,11 @@
           if (key === target) form.classList.add("active"); else form.classList.remove("active");
         });
       };
+      const toggleTabs = (visible) => {
+        if (!tabsContainer) return;
+        tabsContainer.style.display = visible ? "" : "none";
+      };
+
       tabs.forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.preventDefault();
@@ -124,6 +244,7 @@
       Array.from(document.querySelectorAll(".to-login")).forEach((link) => {
         link.addEventListener("click", (e) => {
           e.preventDefault();
+          toggleTabs(true);
           showForm("login");
           flash("");
         });
@@ -131,10 +252,264 @@
       Array.from(document.querySelectorAll(".to-signup")).forEach((link) => {
         link.addEventListener("click", (e) => {
           e.preventDefault();
+          toggleTabs(true);
           showForm("signup");
           flash("");
         });
       });
+
+      const tokenForm = forms.token;
+      const tokenTitle = document.getElementById("token-form-title");
+      const tokenInfo = document.getElementById("token-form-info");
+      const tokenEmailRow = document.getElementById("token-email-row");
+      const tokenEmailInput = document.getElementById("token-email");
+      const tokenPasswordRow = document.getElementById("token-password-row");
+      const tokenPasswordInput = document.getElementById("token-password");
+      const tokenPasswordLabel = document.getElementById("token-password-label");
+      const tokenSubmit = document.getElementById("token-submit");
+      if (tokenSubmit) tokenSubmit.dataset.label = tokenSubmit.textContent;
+      let tokenFlowState = { type: "", token: "", email: "" };
+      let tokenFlowActive = false;
+
+      const showElement = (el, visible) => {
+        if (!el) return;
+        el.style.display = visible ? "" : "none";
+      };
+      const resetTokenFlow = () => {
+        tokenFlowActive = false;
+        tokenFlowState = { type: "", token: "", email: "" };
+        if (tokenPasswordInput) tokenPasswordInput.value = "";
+        toggleTabs(true);
+        showForm("login");
+      };
+      const configureTokenForm = (cfg) => {
+        if (!tokenForm) return;
+        tokenFlowActive = true;
+        tokenFlowState = { type: cfg.type, token: cfg.token, email: cfg.email || "" };
+        toggleTabs(false);
+        showForm("token");
+        if (tokenTitle) tokenTitle.textContent = cfg.title || "";
+        if (tokenInfo) tokenInfo.textContent = cfg.info || "";
+        if (tokenEmailInput) tokenEmailInput.value = cfg.email || "";
+        showElement(tokenEmailRow, !!cfg.showEmailRow);
+        const showPassword = cfg.showPasswordRow !== false;
+        showElement(tokenPasswordRow, showPassword);
+        if (tokenPasswordInput) {
+          tokenPasswordInput.value = "";
+          tokenPasswordInput.required = showPassword && cfg.requirePassword !== false;
+          if (cfg.passwordMinLength) tokenPasswordInput.setAttribute("minlength", String(cfg.passwordMinLength));
+          else tokenPasswordInput.removeAttribute("minlength");
+          if (cfg.passwordAutocomplete) tokenPasswordInput.setAttribute("autocomplete", cfg.passwordAutocomplete);
+          else tokenPasswordInput.setAttribute("autocomplete", "new-password");
+        }
+        if (tokenPasswordLabel) tokenPasswordLabel.textContent = cfg.passwordLabel || "Hasło";
+        if (tokenSubmit) {
+          const label = cfg.submitLabel || "Zapisz";
+          tokenSubmit.textContent = label;
+          tokenSubmit.dataset.label = label;
+        }
+      };
+
+      const rawFlow = detectIdentityFlow();
+      if (rawFlow.error || rawFlow.errorDescription) {
+        const errText = rawFlow.errorDescription || rawFlow.error;
+        if (errText) flash(`Nie udało się przetworzyć linku: ${errText}`, "error");
+      }
+
+      const errorMsg = (err) => {
+        if (!err) return "";
+        const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || "");
+        return msg;
+      };
+
+      const handleInviteSubmit = async () => {
+        if (!tokenSubmit || !tokenPasswordInput) return;
+        const password = tokenPasswordInput.value;
+        if (!password) return flash("Podaj hasło, aby kontynuować.", "warn");
+        try {
+          setBusy(tokenSubmit, true);
+          const user = await netlifyIdentity.gotrue.acceptInvite(tokenFlowState.token, password);
+          try { await netlifyIdentity.refresh(); } catch {}
+          const current = netlifyIdentity.currentUser() || user;
+          if (current) {
+            await afterLogin(current);
+            if (!hasAccess(current)) {
+              resetTokenFlow();
+            }
+          } else {
+            flash("Zaproszenie aktywowane. Zaloguj się nowym hasłem.", "success");
+            resetTokenFlow();
+          }
+        } catch (err) {
+          const msg = errorMsg(err).toLowerCase();
+          if (msg.includes("invalid") || msg.includes("token")) {
+            flash("Link zaproszeniowy jest nieprawidłowy lub został już użyty.", "error");
+          } else if (msg.includes("expired")) {
+            flash("Link zaproszeniowy wygasł. Poproś administratora o nowe zaproszenie.", "error");
+          } else {
+            flash("Nie udało się aktywować zaproszenia: " + (errorMsg(err) || "Nieznany błąd"), "error");
+          }
+        } finally {
+          setBusy(tokenSubmit, false);
+        }
+      };
+
+      const handleRecoverySubmit = async () => {
+        if (!tokenSubmit || !tokenPasswordInput) return;
+        const password = tokenPasswordInput.value;
+        if (!password) return flash("Podaj nowe hasło.", "warn");
+        try {
+          setBusy(tokenSubmit, true);
+          const user = await netlifyIdentity.gotrue.recover(tokenFlowState.token, password);
+          try { await netlifyIdentity.refresh(); } catch {}
+          const current = netlifyIdentity.currentUser() || user;
+          if (current) {
+            if (hasAccess(current)) {
+              flash("Hasło zostało zmienione. Logowanie...", "success");
+              await afterLogin(current);
+            } else {
+              flash("Hasło zostało zmienione, ale konto nie jest aktywne. Skontaktuj się z administratorem.", "warn");
+              try { await netlifyIdentity.logout(); } catch {}
+              clearLocalSessionId();
+              resetTokenFlow();
+            }
+          } else {
+            flash("Hasło zostało zmienione. Zaloguj się nowym hasłem.", "success");
+            resetTokenFlow();
+          }
+        } catch (err) {
+          flash("Nie udało się ustawić hasła: " + (errorMsg(err) || 'Nieznany błąd'), "error");
+        } finally {
+          setBusy(tokenSubmit, false);
+        }
+      };
+
+      if (tokenForm) {
+        tokenForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          if (!tokenFlowState.type) return;
+          if (!tokenFlowState.token) {
+            flash("Brakuje tokenu dla tej operacji. Otwórz ponownie link z wiadomości.", "error");
+            return;
+          }
+          if (tokenFlowState.type === "invite") {
+            await handleInviteSubmit();
+          } else if (tokenFlowState.type === "recovery") {
+            await handleRecoverySubmit();
+          }
+        });
+      }
+
+      const applyDefaultViewFromParams = () => {
+        if (tokenFlowActive) return;
+        try {
+          const params = new URLSearchParams(location.search);
+          if (params.has("signup") || params.get("view") === "signup") {
+            toggleTabs(true);
+            showForm("signup");
+          } else {
+            toggleTabs(true);
+            showForm("login");
+          }
+        } catch {
+          toggleTabs(true);
+          showForm("login");
+        }
+      };
+
+      const handleConfirmationFlow = async () => {
+        if (!rawFlow.token) {
+          flash("Brakuje tokenu potwierdzającego. Spróbuj ponownie otworzyć link.", "error");
+          return;
+        }
+        flash("Potwierdzam adres e‑mail...", "");
+        try {
+          const user = await netlifyIdentity.gotrue.confirm(rawFlow.token);
+          try { await netlifyIdentity.refresh(); } catch {}
+          const current = netlifyIdentity.currentUser() || user;
+          if (current) {
+            await afterLogin(current);
+            if (!hasAccess(current)) {
+              toggleTabs(true);
+              showForm("login");
+            }
+          } else {
+            flash("Adres e‑mail został potwierdzony. Możesz się zalogować.", "success");
+          }
+        } catch (err) {
+          flash("Nie udało się potwierdzić adresu: " + (errorMsg(err) || 'Nieznany błąd'), "error");
+        }
+      };
+
+      const handleEmailChangeFlow = async () => {
+        if (!rawFlow.token) {
+          flash("Brakuje tokenu potwierdzającego zmianę e‑maila.", "error");
+          return;
+        }
+        flash("Potwierdzam zmianę adresu e‑mail...", "");
+        try {
+          await netlifyIdentity.gotrue.verify('email_change', rawFlow.token);
+          const emailText = rawFlow.email ? `na ${rawFlow.email}` : '';
+          flash(`Adres e‑mail został zmieniony ${emailText}. Zaloguj się nowym adresem.`, "success");
+          try { await netlifyIdentity.logout(); } catch {}
+          clearLocalSessionId();
+        } catch (err) {
+          flash("Nie udało się potwierdzić zmiany adresu: " + (errorMsg(err) || 'Nieznany błąd'), "error");
+        }
+      };
+
+      (async () => {
+        if (!rawFlow.type) {
+          applyDefaultViewFromParams();
+          return;
+        }
+        if ((rawFlow.type === 'invite' || rawFlow.type === 'recovery' || rawFlow.type === 'confirm' || rawFlow.type === 'email-change') && !rawFlow.token) {
+          flash("Brakuje tokenu w linku. Poproś o nowy link.", "error");
+          applyDefaultViewFromParams();
+          return;
+        }
+        if (rawFlow.type === 'invite') {
+          configureTokenForm({
+            type: 'invite',
+            token: rawFlow.token,
+            email: rawFlow.email,
+            title: 'Aktywuj konto',
+            info: rawFlow.email ? `Link zaproszeniowy dla adresu ${rawFlow.email}. Ustal hasło, aby dokończyć rejestrację.` : 'Link zaproszeniowy. Ustal hasło, aby dokończyć rejestrację.',
+            showEmailRow: false,
+            showPasswordRow: true,
+            passwordLabel: 'Ustaw hasło',
+            passwordMinLength: 6,
+            submitLabel: 'Aktywuj konto',
+            passwordAutocomplete: 'new-password'
+          });
+          return;
+        }
+        if (rawFlow.type === 'recovery') {
+          configureTokenForm({
+            type: 'recovery',
+            token: rawFlow.token,
+            email: rawFlow.email,
+            title: 'Reset hasła',
+            info: rawFlow.email ? `Ustal nowe hasło dla konta ${rawFlow.email}.` : 'Ustal nowe hasło dla swojego konta.',
+            showEmailRow: false,
+            showPasswordRow: true,
+            passwordLabel: 'Nowe hasło',
+            passwordMinLength: 6,
+            submitLabel: 'Zapisz nowe hasło',
+            passwordAutocomplete: 'new-password'
+          });
+          return;
+        }
+        toggleTabs(true);
+        showForm('login');
+        if (rawFlow.type === 'confirm') {
+          await handleConfirmationFlow();
+        } else if (rawFlow.type === 'email-change') {
+          await handleEmailChangeFlow();
+        } else {
+          applyDefaultViewFromParams();
+        }
+      })();
 
       // Jeżeli już zalogowany i aktywny → przenieś do members
       netlifyIdentity.on("init", async (user) => {
@@ -143,6 +518,8 @@
           flash("Konto nieaktywne – poproś administratora o aktywację.", "warn");
           try { await netlifyIdentity.logout(); } catch {}
           clearLocalSessionId();
+          toggleTabs(true);
+          showForm('login');
           return;
         }
         await setNFJwtCookie(user);
@@ -171,11 +548,14 @@
           const user = netlifyIdentity.currentUser();
           if (user) {
             await afterLogin(user);
+            if (!hasAccess(user)) {
+              toggleTabs(true);
+              showForm('login');
+            }
           } else {
             flash("Zalogowano, ale nie udało się pobrać danych użytkownika.", "error");
           }
         } catch (err) {
-          // Map known errors to friendlier PL messages
           const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || '');
           const lower = msg.toLowerCase();
           const isInvalidGrant = lower.includes('invalid_grant') || lower.includes('no user found') || lower.includes('password invalid');
@@ -209,7 +589,6 @@
           setBusy(signupBtn, true);
           await netlifyIdentity.gotrue.signup(email, password);
 
-          // Po rejestracji spróbuj zalogować i przenieść użytkownika.
           let autoLoginSucceeded = false;
           try {
             await netlifyIdentity.gotrue.login(email, password, true);
@@ -217,7 +596,7 @@
             const user = netlifyIdentity.currentUser();
             if (user) {
               await afterLogin(user);
-              autoLoginSucceeded = true;
+              autoLoginSucceeded = hasAccess(user);
             }
           } catch (loginErr) {
             const loginMsg = (loginErr && (loginErr.message || loginErr.msg)) ? String(loginErr.message || loginErr.msg) : '';
@@ -232,6 +611,7 @@
           }
 
           if (!autoLoginSucceeded) {
+            toggleTabs(true);
             showForm("login");
           }
         } catch (err) {
@@ -262,16 +642,8 @@
         }
       });
 
-      // Ustaw widok zakładek na podstawie parametrów w URL
-      try {
-        const params = new URLSearchParams(location.search);
-        if (params.has('signup') || params.get('view') === 'signup') {
-          showForm('signup');
-        } else {
-          showForm('login');
-        }
-      } catch {
-        showForm('login');
+      if (!tokenFlowActive && !rawFlow.type) {
+        applyDefaultViewFromParams();
       }
     });
   </script>

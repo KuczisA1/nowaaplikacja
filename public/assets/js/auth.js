@@ -9,13 +9,106 @@
 
 (function () {
   if (typeof window === 'undefined') return;
-  const ID = window.netlifyIdentity;
-  if (!ID) return;
 
   const NF_JWT_COOKIE = 'nf_jwt';
   const LOCAL_SESSION_KEY = 'chem_session_id';
   const MEMBERS_PATH = '/members/';
   const LOGIN_PATH = '/login/';
+
+  const parseHashParams = () => {
+    const hash = (location.hash || '').replace(/^#/, '');
+    if (!hash) return {};
+    return hash.split('&').reduce((acc, piece) => {
+      if (!piece) return acc;
+      const [key, value = ''] = piece.split('=');
+      const k = decodeURIComponent(key || '');
+      if (!k) return acc;
+      acc[k] = decodeURIComponent(value || '');
+      return acc;
+    }, {});
+  };
+
+  const decodeEmailFromToken = (token) => {
+    if (!token || token.indexOf('.') === -1) return '';
+    try {
+      const base = token.split('.')[1];
+      if (!base) return '';
+      const normalized = base.replace(/-/g, '+').replace(/_/g, '/');
+      const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+      const json = atob(normalized + padding);
+      const payload = JSON.parse(json);
+      const email = payload.email || payload.email_new || payload.new_email || payload.sub;
+      return typeof email === 'string' ? email : '';
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const detectIdentityFlowFromHash = () => {
+    const hashParams = parseHashParams();
+    const typeParam = (hashParams.type || '').toLowerCase();
+    const error = hashParams.error || '';
+    const errorDescription = hashParams.error_description || '';
+
+    const pickToken = (keys) => {
+      for (const key of keys) {
+        if (hashParams[key]) return hashParams[key];
+      }
+      return '';
+    };
+
+    let flow = '';
+    if (hashParams.invite_token || (hashParams.token && typeParam === 'invite')) flow = 'invite';
+    else if (hashParams.recovery_token || typeParam === 'recovery') flow = 'recovery';
+    else if (hashParams.email_change_token || typeParam === 'email_change' || typeParam === 'email_change_confirm') flow = 'email-change';
+    else if (hashParams.confirmation_token || typeParam === 'confirmation' || typeParam === 'signup') flow = 'confirm';
+
+    let token = '';
+    if (flow === 'invite') token = pickToken(['invite_token', 'token']);
+    else if (flow === 'recovery') token = pickToken(['recovery_token', 'token']);
+    else if (flow === 'email-change') token = pickToken(['email_change_token', 'token']);
+    else if (flow === 'confirm') token = pickToken(['confirmation_token', 'token']);
+    else if (!flow) token = pickToken(['token']);
+
+    const email = hashParams.email || hashParams.new_email || hashParams.email_new || decodeEmailFromToken(token);
+
+    return { type: flow, token, email, rawType: typeParam, error, errorDescription };
+  };
+
+  const redirectIdentityHashToLogin = () => {
+    if (!location.hash) return;
+    const flow = detectIdentityFlowFromHash();
+    if (!flow.type && !flow.token && !flow.error && !flow.errorDescription) return;
+    const target = new URL(LOGIN_PATH, location.origin);
+    try {
+      const currentParams = new URLSearchParams(location.search || '');
+      currentParams.forEach((value, key) => {
+        target.searchParams.set(key, value);
+      });
+    } catch {}
+    if (flow.type) target.searchParams.set('flow', flow.type);
+    if (flow.token) target.searchParams.set('token', flow.token);
+    if (flow.email) target.searchParams.set('email', flow.email);
+    if (flow.rawType) target.searchParams.set('type', flow.rawType);
+    if (flow.error) target.searchParams.set('error', flow.error);
+    if (flow.errorDescription) target.searchParams.set('error_description', flow.errorDescription);
+
+    const onLoginPage = location.pathname.startsWith(LOGIN_PATH);
+    if (onLoginPage) {
+      try {
+        history.replaceState({}, document.title, target.pathname + target.search);
+      } catch (e) {
+        location.replace(target.toString());
+      }
+    } else {
+      location.replace(target.toString());
+    }
+  };
+
+  redirectIdentityHashToLogin();
+
+  const ID = window.netlifyIdentity;
+  if (!ID) return;
 
   const isMembersPage = () => {
     try {
@@ -154,9 +247,16 @@
   };
 
   const onLoginPageInit = async () => {
-    // If already logged and active, jump to members
+    let identityFlowInQuery = false;
+    try {
+      const qp = new URLSearchParams(location.search || '');
+      if (qp.get('flow')) identityFlowInQuery = true;
+      if (qp.has('token') || qp.has('error') || qp.has('error_description')) identityFlowInQuery = true;
+    } catch {}
+
+    // If already logged and active, jump to members (unless handling a special flow)
     const user = getUser();
-    if (user && isActiveUser(user)) {
+    if (!identityFlowInQuery && user && isActiveUser(user)) {
       await setNFJwtCookie(user);
       const sid = user.app_metadata && user.app_metadata.session_id;
       if (sid) saveLocalSessionId(sid);
