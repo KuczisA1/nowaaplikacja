@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Verify your email for {{ site_name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light only;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0b0d17;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        color: #1f2937;
+      }
+      .wrapper {
+        width: 100%;
+        background-color: #0b0d17;
+        padding: 32px 12px;
+      }
+      .card {
+        max-width: 560px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+      }
+      .header {
+        padding: 32px 40px 16px;
+        background: linear-gradient(135deg, #10b981, #0ea5e9);
+        color: #ffffff;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 600;
+      }
+      .content {
+        padding: 32px 40px;
+      }
+      .content p {
+        margin: 0 0 16px;
+        line-height: 1.6;
+      }
+      .button-wrapper {
+        text-align: center;
+        margin: 32px 0;
+      }
+      .cta {
+        display: inline-block;
+        padding: 14px 28px;
+        font-size: 16px;
+        font-weight: 600;
+        color: #ffffff !important;
+        text-decoration: none;
+        background: linear-gradient(135deg, #10b981, #0ea5e9);
+        border-radius: 999px;
+      }
+      .footer {
+        padding: 16px 40px 32px;
+        font-size: 12px;
+        color: #6b7280;
+        background-color: #f9fafb;
+      }
+      .footer a {
+        color: #0ea5e9;
+        text-decoration: none;
+      }
+      @media (max-width: 600px) {
+        .card {
+          border-radius: 0;
+        }
+        .header,
+        .content,
+        .footer {
+          padding: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="card">
+        <div class="header">
+          <h1>Confirm your email</h1>
+          <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.85;">
+            Activate your {{ site_name }} account
+          </p>
+        </div>
+        <div class="content">
+          <p>Hi {{ email }},</p>
+          <p>
+            Thanks for creating an account on <strong>{{ site_name }}</strong>. We just
+            need to verify that this email address really belongs to you.
+          </p>
+          <div class="button-wrapper">
+            <a class="cta" href="{{ confirm_link }}" target="_blank" rel="noopener">
+              Verify email address
+            </a>
+          </div>
+          <p>
+            If the button above does not work, copy and paste this link into your
+            browser:
+          </p>
+          <p style="word-break: break-all; font-size: 14px;">{{ confirm_link }}</p>
+          <p>
+            This link will expire in {{ confirmation_expiration }}. If it expires,
+            just start the signup process again at
+            <a href="{{ site_url }}" target="_blank" rel="noopener">{{ site_url }}</a>.
+          </p>
+        </div>
+        <div class="footer">
+          <p>
+            You are receiving this email because you signed up for
+            {{ site_name }} as {{ email }}. If this wasn't you, you can ignore this
+            message.
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
