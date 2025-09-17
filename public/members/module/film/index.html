@@ -14,24 +14,29 @@
     <script src="https://unpkg.com/video.js@8/dist/video.min.js" defer></script>
     <script src="https://unpkg.com/videojs-youtube@3/dist/Youtube.min.js" defer></script>
     <style>
-      :root {
-        color-scheme: dark;
-      }
+      :root { color-scheme: dark; }
       *, *::before, *::after { box-sizing: border-box; }
       html, body { height: 100%; margin: 0; background: #0b0d10; color: #e6e8eb; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-      body { display: flex; flex-direction: column; }
+      body { display: flex; flex-direction: column; overflow: hidden; }
       #app { flex: 1 1 auto; display: grid; grid-template-rows: 1fr; }
       .stage { position: relative; background: #000; display: flex; flex-direction: column; height: 100%; }
       .empty { flex: 1 1 auto; display: grid; place-items: center; text-align: center; padding: 32px; color: #c7cbd1; }
       .empty strong { display: block; margin-bottom: 10px; font-size: 1.1rem; color: #fff; }
-      .video-js { width: 100%; height: 100%; font-size: 16px; }
-      .video-js.vjs-default-skin { background-color: #000; }
+      .player-wrap { position: relative; flex: 1 1 auto; display: flex; width: 100%; height: 100%; }
+      .video-js { flex: 1 1 auto; width: 100%; height: 100%; font-size: 16px; background-color: #000; }
+      .video-js .vjs-tech { object-fit: contain; }
       .vjs-big-play-button { border: none; }
-      .plain-embed { flex: 1 1 auto; width: 100%; height: 100%; border: 0; }
-      #message { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; background: rgba(0,0,0,0.55); color: #fff; text-align: center; z-index: 20; pointer-events: none; opacity: 0; transition: opacity 220ms ease; font-size: 0.95rem; }
+      .plain-embed { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+      #message { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; background: rgba(0,0,0,0.55); color: #fff; text-align: center; z-index: 30; pointer-events: none; opacity: 0; transition: opacity 220ms ease; font-size: 0.95rem; }
       #message.show { opacity: 1; }
+      .overlay-block, .overlay-logo { position: absolute; pointer-events: auto; z-index: 25; display: none; }
+      .overlay-block::before, .overlay-logo::before { content: ""; position: absolute; inset: 0; }
+      .overlay-block { top: 0; right: 0; width: clamp(140px, 22vw, 300px); height: clamp(80px, 16vh, 200px); }
+      .overlay-block::before { background: radial-gradient(120px 120px at 80% 20%, rgba(0,0,0,0.7), rgba(0,0,0,0.3) 60%, transparent 100%); }
+      .overlay-logo { bottom: 0; right: 0; width: clamp(120px, 24vw, 260px); height: clamp(60px, 16vh, 160px); }
+      .overlay-logo::before { background: radial-gradient(130px 130px at 75% 75%, rgba(0,0,0,0.75), rgba(0,0,0,0.35) 55%, transparent 100%); }
       body[data-mode="plain"] #player { display: none !important; }
-      body[data-mode="plain"] .vjs-control-bar { display: none !important; }
+      body[data-mode="plain"] .vjs-control-bar,
       body[data-mode="plain"] .vjs-big-play-button { display: none !important; }
       body[data-native-fs="1"] #message { display: none; }
       body[data-mode="plain"] #message { display: none; }
@@ -64,44 +69,37 @@
         <div class="empty" id="empty">
           <div>
             <strong>Podaj ID filmu YouTube w URL</strong>
-            <div>Użycie: <code>?id=dQw4w9WgXcQ&amp;type=1</code> albo <code>type=2</code></div>
+            <div>Użycie: <code>?id=dQw4w9WgXcQ&amp;type=1</code> albo <code>?id=dQw4w9WgXcQ&amp;type=2</code></div>
           </div>
         </div>
-        <video id="player" class="video-js vjs-default-skin" playsinline controls preload="auto"></video>
-        <iframe id="plain" class="plain-embed" hidden
-          referrerpolicy="no-referrer"
-          allow="autoplay; picture-in-picture; fullscreen"
-          allowfullscreen
-          sandbox="allow-scripts allow-same-origin"></iframe>
+        <div class="player-wrap" id="playerWrap">
+          <video id="player" class="video-js vjs-default-skin vjs-big-play-centered" playsinline controls preload="auto"></video>
+          <iframe id="plain" class="plain-embed" hidden
+            referrerpolicy="no-referrer"
+            allow="autoplay; picture-in-picture; fullscreen"
+            allowfullscreen
+            sandbox="allow-scripts allow-same-origin allow-presentation"></iframe>
+          <div id="shareBlock" class="overlay-block" hidden title="Zablokowana strefa udostępniania"></div>
+          <div id="logoBlock" class="overlay-logo" hidden title="Zablokowany obszar logo"></div>
+        </div>
       </div>
     </div>
 
     <script>
-      const $ = (s) => document.querySelector(s);
-      const STORAGE_KEYS = {
-        volume: 'chem.videojs.volume',
-        muted: 'chem.videojs.muted',
-      };
-      const SESSION_KEYS = {
-        id: 'yt_id',
-        type: 'yt_type',
-      };
+      const $ = (selector) => document.querySelector(selector);
+      const STORAGE_KEYS = { volume: 'chem.videojs.volume', muted: 'chem.videojs.muted' };
+      const SESSION_KEYS = { id: 'yt_id', type: 'yt_type' };
+      let playerInstance = null;
 
       const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
-
-      const saveLocal = (key, value) => {
-        try { localStorage.setItem(key, value); } catch {}
-      };
-      const readLocal = (key) => {
-        try { const raw = localStorage.getItem(key); return raw === null ? null : raw; } catch { return null; }
-      };
+      const saveLocal = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+      const readLocal = (key) => { try { const raw = localStorage.getItem(key); return raw === null ? null : raw; } catch { return null; } };
       const saveSession = (key, value) => { try { sessionStorage.setItem(key, value); } catch {} };
       const readSession = (key) => { try { return sessionStorage.getItem(key) || ''; } catch { return ''; } };
-
       const stripUrlToHostOnly = () => {
         try {
-          const to = location.origin + '/';
-          if (location.href !== to) history.replaceState({}, '', to);
+          const target = location.origin + '/';
+          if (location.href !== target) history.replaceState({}, '', target);
         } catch {}
       };
 
@@ -109,8 +107,7 @@
         const raw = readLocal(STORAGE_KEYS.volume);
         if (raw === null) return null;
         const num = Number(raw);
-        if (!Number.isFinite(num)) return null;
-        return clamp(num, 0, 100) / 100;
+        return Number.isFinite(num) ? clamp(num, 0, 100) / 100 : null;
       };
       const loadMuted = () => {
         const raw = readLocal(STORAGE_KEYS.muted);
@@ -123,11 +120,13 @@
         const box = $('#message');
         if (!box) return;
         box.textContent = text || '';
-        box.classList.toggle('show', !!text);
-        if (text && duration > 0) {
-          window.setTimeout(() => {
-            box.classList.remove('show');
-          }, duration);
+        if (text) {
+          box.classList.add('show');
+          if (duration > 0) {
+            window.setTimeout(() => box.classList.remove('show'), duration);
+          }
+        } else {
+          box.classList.remove('show');
         }
       };
 
@@ -139,7 +138,20 @@
       };
       const hideEmpty = () => {
         const empty = $('#empty');
-        if (empty) empty.remove();
+        if (empty) empty.hidden = true;
+      };
+
+      const showOverlays = () => {
+        const share = $('#shareBlock');
+        const logo = $('#logoBlock');
+        if (share) share.hidden = false;
+        if (logo) logo.hidden = false;
+      };
+      const hideOverlays = () => {
+        const share = $('#shareBlock');
+        const logo = $('#logoBlock');
+        if (share) share.hidden = true;
+        if (logo) logo.hidden = true;
       };
 
       const makePlainEmbedUrl = (id) => {
@@ -155,48 +167,62 @@
         return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params.toString()}`;
       };
 
+      const waitForVideoJs = () => new Promise((resolve, reject) => {
+        let tries = 0;
+        const check = () => {
+          tries += 1;
+          if (window.videojs && window.videojs.Youtube) {
+            resolve(window.videojs);
+            return;
+          }
+          if (tries > 150) {
+            reject(new Error('Nie udało się załadować Video.js'));
+            return;
+          }
+          window.setTimeout(check, 100);
+        };
+        check();
+      });
+
       const initPlainEmbed = (id) => {
         document.body.dataset.mode = 'plain';
+        hideEmpty();
         const iframe = $('#plain');
+        const video = $('#player');
+        if (playerInstance) {
+          try { playerInstance.dispose(); } catch {}
+          playerInstance = null;
+        }
+        if (video) {
+          video.pause?.();
+          video.setAttribute('hidden', '');
+        }
         if (!iframe) return;
         iframe.hidden = false;
         iframe.src = makePlainEmbedUrl(id);
-        hideEmpty();
+        showOverlays();
       };
 
       const initVideoJs = (id) => {
         document.body.dataset.mode = 'player';
+        hideEmpty();
         const videoEl = $('#player');
-        const plain = $('#plain');
-        if (plain) {
-          plain.hidden = true;
-          plain.removeAttribute('src');
-        }
+        const iframe = $('#plain');
         if (!videoEl) {
           showEmpty('<div><strong>Brak elementu odtwarzacza.</strong></div>');
           return;
         }
-        videoEl.classList.add('vjs-default-skin');
+        if (iframe) {
+          iframe.hidden = true;
+          iframe.removeAttribute('src');
+        }
+        if (playerInstance) {
+          try { playerInstance.dispose(); } catch {}
+          playerInstance = null;
+        }
+        videoEl.removeAttribute('hidden');
         const poster = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
         videoEl.setAttribute('poster', poster);
-        hideEmpty();
-
-        const waitForVideoJs = () => new Promise((resolve, reject) => {
-          let tries = 0;
-          const tick = () => {
-            tries += 1;
-            if (window.videojs && window.videojs.Youtube) {
-              resolve(window.videojs);
-              return;
-            }
-            if (tries > 120) {
-              reject(new Error('Nie udało się załadować Video.js'));
-              return;
-            }
-            setTimeout(tick, 100);
-          };
-          tick();
-        });
 
         waitForVideoJs().then((videojs) => {
           const options = {
@@ -204,11 +230,10 @@
             autoplay: false,
             preload: 'auto',
             poster,
+            responsive: true,
+            fill: true,
             techOrder: ['youtube'],
-            sources: [{
-              type: 'video/youtube',
-              src: `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`,
-            }],
+            sources: [{ type: 'video/youtube', src: `https://www.youtube.com/watch?v=${encodeURIComponent(id)}` }],
             youtube: {
               ytControls: 0,
               modestbranding: 1,
@@ -220,12 +245,17 @@
           };
 
           const player = videojs(videoEl, options, function onReady() {
-            const savedVolume = loadVolume();
             const savedMuted = loadMuted();
+            const savedVolume = loadVolume();
             if (savedMuted !== null) this.muted(savedMuted);
             if (savedVolume !== null) this.volume(savedVolume);
+            this.fluid(true);
+            this.fill(true);
             showMessage('Odtwarzacz gotowy');
           });
+
+          playerInstance = player;
+          showOverlays();
 
           player.on('volumechange', () => {
             try {
@@ -254,7 +284,7 @@
           };
 
           const seekBySeconds = (seconds) => {
-            if (player.scrubbing()) return;
+            if (player.scrubbing && player.scrubbing()) return;
             const duration = player.duration();
             if (!Number.isFinite(duration)) {
               showMessage('Przewijanie niedostępne dla transmisji na żywo');
@@ -298,11 +328,8 @@
               case 'f':
               case 'F':
                 event.preventDefault();
-                if (player.isFullscreen()) {
-                  player.exitFullscreen();
-                } else {
-                  player.requestFullscreen();
-                }
+                if (player.isFullscreen()) player.exitFullscreen();
+                else player.requestFullscreen();
                 break;
               default:
                 break;
@@ -310,19 +337,15 @@
           };
 
           document.addEventListener('keydown', handleKey);
+          player.on('dispose', () => document.removeEventListener('keydown', handleKey));
 
-          player.on('dispose', () => {
-            document.removeEventListener('keydown', handleKey);
+          player.on('fullscreenchange', () => {
+            const isFs = player.isFullscreen();
+            document.body.dataset.nativeFs = isFs ? '1' : '0';
+            if (!isFs) showOverlays();
           });
-
-          // prefer natywny fullscreen na urządzeniach dotykowych
-          if (/(iPhone|iPad|iPod|Android)/i.test(navigator.userAgent || '')) {
-            player.on('fullscreenchange', () => {
-              document.body.dataset.nativeFs = player.isFullscreen() ? '1' : '0';
-            });
-          }
-
         }).catch((err) => {
+          showOverlays();
           showEmpty(`<div><strong>Błąd inicjalizacji.</strong><div>${err.message || err}</div></div>`);
         });
       };
@@ -335,6 +358,7 @@
 
         if (!id) {
           showEmpty('<div><strong>Brak parametru ID filmu.</strong><div>Dodaj ?id=&lt;YouTubeID&gt; do adresu.</div></div>');
+          hideOverlays();
           return;
         }
 
