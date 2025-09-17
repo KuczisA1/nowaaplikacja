@@ -658,7 +658,11 @@
         } catch (err) {
           const msg = (err && (err.message || err.msg)) ? String(err.message || err.msg) : String(err || '');
           const lower = msg.toLowerCase();
-          if (lower.includes('email') && lower.includes('exists')) {
+          if (lower.includes('signups not allowed')) {
+            flash("Rejestracja nowych kont jest wyłączona dla tej instancji.", "error");
+          } else if (lower.includes('already been registered') || (lower.includes('email') && lower.includes('registered'))) {
+            flash(`Konto z adresem "${email}" już istnieje.`, "error");
+          } else if (lower.includes('email') && lower.includes('exists')) {
             flash(`Konto z adresem "${email}" już istnieje.`, "error");
           } else if (lower.includes('weak-password') || lower.includes('short')) {
             flash(`Hasło jest zbyt krótkie. Hasło musi mieć co najmniej ${MIN_PASSWORD_LENGTH} znaków.`, "error");
