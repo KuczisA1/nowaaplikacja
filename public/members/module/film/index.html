@@ -6,12 +6,37 @@
     <meta name="referrer" content="no-referrer" />
     <meta name="x-members" content="1" />
     <meta http-equiv="Cache-Control" content="no-store" />
-    <title>Custom YouTube Player</title>
+    <title>Odtwarzacz filmu</title>
     <style id="anti-flash">html{visibility:hidden}</style>
+    <link rel="stylesheet" href="https://unpkg.com/video.js@8/dist/video-js.min.css" />
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     <script defer src="/assets/js/auth.js"></script>
+    <script src="https://unpkg.com/video.js@8/dist/video.min.js" defer></script>
+    <script src="https://unpkg.com/videojs-youtube@3/dist/Youtube.min.js" defer></script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; background: #0b0d10; color: #e6e8eb; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      body { display: flex; flex-direction: column; }
+      #app { flex: 1 1 auto; display: grid; grid-template-rows: 1fr; }
+      .stage { position: relative; background: #000; display: flex; flex-direction: column; height: 100%; }
+      .empty { flex: 1 1 auto; display: grid; place-items: center; text-align: center; padding: 32px; color: #c7cbd1; }
+      .empty strong { display: block; margin-bottom: 10px; font-size: 1.1rem; color: #fff; }
+      .video-js { width: 100%; height: 100%; font-size: 16px; }
+      .video-js.vjs-default-skin { background-color: #000; }
+      .vjs-big-play-button { border: none; }
+      .plain-embed { flex: 1 1 auto; width: 100%; height: 100%; border: 0; }
+      #message { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; background: rgba(0,0,0,0.55); color: #fff; text-align: center; z-index: 20; pointer-events: none; opacity: 0; transition: opacity 220ms ease; font-size: 0.95rem; }
+      #message.show { opacity: 1; }
+      body[data-mode="plain"] #player { display: none !important; }
+      body[data-mode="plain"] .vjs-control-bar { display: none !important; }
+      body[data-mode="plain"] .vjs-big-play-button { display: none !important; }
+      body[data-native-fs="1"] #message { display: none; }
+      body[data-mode="plain"] #message { display: none; }
+    </style>
     <script>
-      // Wczesne czyszczenie paska adresu: zapisz id do sesji i usuń query jak najwcześniej
       (function earlyStrip(){
         try {
           const sp = new URLSearchParams(location.search);
@@ -31,219 +56,93 @@
         try { document.documentElement.style.visibility = 'visible'; } catch {}
       })();
     </script>
-    <style>
-      :root { --btn: 46px; --gap: 12px; --pad: max(12px, env(safe-area-inset-bottom)); --thumb: 18px; }
-      @media (max-width: 680px) { :root { --btn: 56px; --gap: 12px; --thumb: 22px; } }
-      html, body { height: 100%; margin: 0; background: #0b0d10; color: #e6e8eb; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-      body { overflow: hidden; -webkit-tap-highlight-color: transparent; }
-      #app { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr; }
-      .stage { position: relative; background: #000; overflow: hidden; }
-      .player-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-      /* Częściowy overlay, utrudniający klik przycisku "Udostępnij" itp. */
-      .overlay-block { position: absolute; right: 0; top: 0; width: clamp(140px, 22vw, 280px); height: clamp(80px, 16vh, 180px); pointer-events: auto; }
-      .overlay-block::before { content: ""; position: absolute; inset: 0; background: radial-gradient(120px 120px at 80% 20%, rgba(0,0,0,0.6), rgba(0,0,0,0.2) 60%, transparent 100%); }
-      .overlay-block[aria-hidden="true"] { pointer-events: none; }
-      /* Overlay zasłaniający logo YouTube w prawym dolnym rogu */
-      .overlay-logo { position: absolute; right: 0; bottom: 0; width: clamp(100px, 20vw, 220px); height: clamp(48px, 10vh, 120px); pointer-events: auto; }
-      .overlay-logo::before { content: ""; position: absolute; inset: 0; background: radial-gradient(100px 100px at 80% 80%, rgba(0,0,0,0.65), rgba(0,0,0,0.25) 60%, transparent 100%); }
-      .overlay-logo[aria-hidden="true"] { pointer-events: none; }
-
-      .controls { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: auto 1fr auto; gap: var(--gap); align-items: center; padding: 10px 12px calc(var(--pad)); background: linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.35)); transition: opacity 150ms ease, transform 220ms ease; z-index: 20; }
-      .bar { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
-      .btn { appearance: none; border: 0; border-radius: 10px; width: var(--btn); height: var(--btn); background: #1b222c; color: #fff; cursor: pointer; display: grid; place-items: center; touch-action: manipulation; user-select: none; }
-      .btn svg { width: calc(var(--btn) * 0.48); height: calc(var(--btn) * 0.48); fill: currentColor; display: block; }
-      .btn:hover { background: #202938; }
-      .btn:active { transform: translateY(1px); }
-      .time { font-variant-numeric: tabular-nums; opacity: .9; min-width: 52px; text-align: center; }
-      .range { width: 100%; accent-color: #4BB; touch-action: pan-x; cursor: pointer; }
-      .range:hover { cursor: pointer; }
-      .range:active { cursor: grabbing; }
-      .vol { width: min(140px, 30vw); }
-      .empty { display: grid; place-items: center; height: 100%; text-align: center; padding: 24px; color: #c7cbd1; }
-      .empty code { background: #0f1216; padding: 2px 6px; border-radius: 4px; border: 1px solid #1c2127; }
-
-      body[data-mode="embed"] #app { grid-template-rows: 1fr; }
-      body[data-mode="embed"] .controls,
-      body[data-mode="embed"] .overlay-block,
-      body[data-mode="embed"] .overlay-logo { display: none !important; }
-
-      body[data-controls="hidden"] .controls { opacity: 0; transform: translate3d(0, calc(100% + var(--pad)), 0); pointer-events: none; }
-      body[data-controls="hidden"] .stage { cursor: none; }
-      body[data-touch="1"] .stage { cursor: auto; }
-      body[data-touch="1"] .controls { touch-action: manipulation; }
-      body[data-native-fs="1"] .controls { display: none !important; }
-
-      /* Grubszy slider na mobile/desktop */
-      input[type="range"] { -webkit-appearance: none; height: 24px; background: transparent; }
-      input[type="range"]:focus { outline: none; }
-      input[type="range"]::-webkit-slider-runnable-track { height: 6px; background: #1b222c; border-radius: 999px; }
-      input[type="range"]::-moz-range-track { height: 6px; background: #1b222c; border-radius: 999px; }
-      input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: var(--thumb); height: var(--thumb); border-radius: 50%; background: #4BB; margin-top: calc((6px - var(--thumb)) / 2); box-shadow: 0 0 0 3px rgba(75,187,187,0.25); cursor: grab; }
-      input[type="range"]:active::-webkit-slider-thumb { cursor: grabbing; }
-      input[type="range"]::-moz-range-thumb { width: var(--thumb); height: var(--thumb); border: 0; border-radius: 50%; background: #4BB; box-shadow: 0 0 0 3px rgba(75,187,187,0.25); cursor: grab; }
-      input[type="range"]:active::-moz-range-thumb { cursor: grabbing; }
-    </style>
   </head>
   <body>
     <div id="app">
       <div class="stage" id="stage">
+        <div id="message"></div>
         <div class="empty" id="empty">
           <div>
-            <div style="font-weight:600; margin-bottom: 8px;">Podaj ID filmu YouTube w URL</div>
-            <div>Użycie: <code>http://localhost:1234/?id=dQw4w9WgXcQ&amp;type=1</code> lub <code>type=2</code></div>
+            <strong>Podaj ID filmu YouTube w URL</strong>
+            <div>Użycie: <code>?id=dQw4w9WgXcQ&amp;type=1</code> albo <code>type=2</code></div>
           </div>
         </div>
-        <iframe id="yt" class="player-iframe" hidden
+        <video id="player" class="video-js vjs-default-skin" playsinline controls preload="auto"></video>
+        <iframe id="plain" class="plain-embed" hidden
           referrerpolicy="no-referrer"
           allow="autoplay; picture-in-picture; fullscreen"
           allowfullscreen
           sandbox="allow-scripts allow-same-origin"></iframe>
-        <div id="shareBlock" class="overlay-block" title="Zablokowana strefa udostępniania" hidden></div>
-        <div id="logoBlock" class="overlay-logo" title="Zablokowany obszar logo" hidden></div>
-      </div>
-      <div class="controls" id="controls" hidden>
-        <button id="play" class="btn" type="button" aria-label="Odtwórz" title="Odtwórz"></button>
-        <div class="bar">
-          <span id="cur" class="time">00:00</span>
-          <input id="seek" class="range" type="range" min="0" max="10000" step="1" value="0" />
-          <span id="dur" class="time">00:00</span>
-        </div>
-        <div class="bar">
-          <button id="mute" class="btn" type="button" aria-label="Wycisz" title="Wycisz"></button>
-          <input id="vol" class="range vol" type="range" min="0" max="100" step="1" value="100" />
-          <button id="fs" class="btn" type="button" aria-label="Pełny ekran" title="Pełny ekran"></button>
-        </div>
       </div>
     </div>
 
     <script>
-      // Utilsy
       const $ = (s) => document.querySelector(s);
-      const fmt = (t) => {
-        t = Math.max(0, Math.floor(t));
-        const h = Math.floor(t/3600);
-        const m = Math.floor((t%3600)/60);
-        const s = t%60;
-        const pad = (n) => String(n).padStart(2, '0');
-        return h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-      };
-
-      const els = {
-        app: $('#app'),
-        stage: $('#stage'),
-        empty: $('#empty'),
-        iframe: $('#yt'),
-        controls: $('#controls'),
-        play: $('#play'),
-        mute: $('#mute'),
-        seek: $('#seek'),
-        vol: $('#vol'),
-        cur: $('#cur'),
-        dur: $('#dur'),
-        shareBlock: $('#shareBlock'),
-        logoBlock: $('#logoBlock'),
-        fs: $('#fs'),
-      };
-
-      const matchPointerQuery = (query) => {
-        try { return typeof window.matchMedia === 'function' && window.matchMedia(query).matches; }
-        catch (err) { return false; }
-      };
-      const coarsePointer = matchPointerQuery('(pointer: coarse)') || matchPointerQuery('(any-pointer: coarse)');
-      const hasTouchPoints = (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) || ('ontouchstart' in window);
-      const pointerLikelyTouch = Boolean(coarsePointer || hasTouchPoints);
-      const pointerEventsSupported = typeof window !== 'undefined' && 'PointerEvent' in window;
-      const HIDE_DELAY = pointerLikelyTouch ? 2200 : 1200;
-      const preferNativeFullscreen = pointerLikelyTouch;
-
-      document.body.dataset.touch = pointerLikelyTouch ? '1' : '0';
-      document.body.dataset.nativeFs = '0';
-      let controlsPinnedVisible = false;
-      document.body.dataset.controls = 'visible';
-      document.body.dataset.live = '0';
-
-      let player = null;
-      let tickerFrame = null;
-      let ready = false;
-      // Stan dźwięku (lokalny): zapobiega zacięciom przy szybkim klikaniu
-      let mutedState = null; // boolean lub null (nieustalony)
-      let lastVolume = 100;  // ostatnia głośność > 0 do przywrócenia po unmute
-      let pendingPlay = false; // zapobiega miganiu ikony podczas buforowania
-      let playingState = false;
-      let hideControlsTimer = null;
-      let lastInputWasKeyboard = false;
-      let lastKnownDuration = null; // aktualna znana długość materiału (sekundy, null dla live)
-      let lastSeekMax = 0; // ostatnia wartość max suwaka czasu
-      let lastIsLive = false; // cache flagi live do UI
-      let nativeFullscreenActive = false; // czy funkcjonujemy w natywnym trybie fullscreen (mobile)
-      let nativeFsListenersBound = false;
       const STORAGE_KEYS = {
-        volume: 'chem.film.volume',
-        muted: 'chem.film.muted',
+        volume: 'chem.videojs.volume',
+        muted: 'chem.videojs.muted',
+      };
+      const SESSION_KEYS = {
+        id: 'yt_id',
+        type: 'yt_type',
       };
 
-      const clampVolume = (val) => {
-        const num = Number(val);
-        if (!Number.isFinite(num)) return null;
-        return Math.max(0, Math.min(100, Math.round(num)));
+      const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+
+      const saveLocal = (key, value) => {
+        try { localStorage.setItem(key, value); } catch {}
       };
-      const saveVolume = (val) => {
-        const clamped = clampVolume(val);
-        if (clamped === null) return;
-        try { localStorage.setItem(STORAGE_KEYS.volume, String(clamped)); } catch {}
+      const readLocal = (key) => {
+        try { const raw = localStorage.getItem(key); return raw === null ? null : raw; } catch { return null; }
       };
-      const saveMuted = (flag) => {
-        try { localStorage.setItem(STORAGE_KEYS.muted, flag ? '1' : '0'); } catch {}
-      };
-      const loadVolume = () => {
+      const saveSession = (key, value) => { try { sessionStorage.setItem(key, value); } catch {} };
+      const readSession = (key) => { try { return sessionStorage.getItem(key) || ''; } catch { return ''; } };
+
+      const stripUrlToHostOnly = () => {
         try {
-          const raw = localStorage.getItem(STORAGE_KEYS.volume);
-          if (raw === null) return null;
-          return clampVolume(raw);
-        } catch {
-          return null;
-        }
+          const to = location.origin + '/';
+          if (location.href !== to) history.replaceState({}, '', to);
+        } catch {}
+      };
+
+      const loadVolume = () => {
+        const raw = readLocal(STORAGE_KEYS.volume);
+        if (raw === null) return null;
+        const num = Number(raw);
+        if (!Number.isFinite(num)) return null;
+        return clamp(num, 0, 100) / 100;
       };
       const loadMuted = () => {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEYS.muted);
-          if (raw === '1') return true;
-          if (raw === '0') return false;
-        } catch {}
+        const raw = readLocal(STORAGE_KEYS.muted);
+        if (raw === '1') return true;
+        if (raw === '0') return false;
         return null;
       };
 
-      function loadYouTubeIframeAPI() {
-        if (window.YT && window.YT.Player) return Promise.resolve();
-        return new Promise((resolve) => {
-          const s = document.createElement('script');
-          s.src = 'https://www.youtube.com/iframe_api';
-          s.async = true;
-          document.head.appendChild(s);
-          const prev = window.onYouTubeIframeAPIReady;
-          window.onYouTubeIframeAPIReady = function() {
-            if (typeof prev === 'function') try { prev(); } catch {}
-            resolve();
-          };
-        });
-      }
+      const showMessage = (text, duration = 1600) => {
+        const box = $('#message');
+        if (!box) return;
+        box.textContent = text || '';
+        box.classList.toggle('show', !!text);
+        if (text && duration > 0) {
+          window.setTimeout(() => {
+            box.classList.remove('show');
+          }, duration);
+        }
+      };
 
-      function makeEmbedUrl(id) {
-        const params = new URLSearchParams({
-          enablejsapi: '1',
-          controls: '0',
-          modestbranding: '1',
-          rel: '0',
-          playsinline: '1',
-          iv_load_policy: '3',
-          disablekb: '1',
-          fs: '0',
-          origin: location.origin,
-        });
-        return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params.toString()}`;
-      }
+      const showEmpty = (html) => {
+        const empty = $('#empty');
+        if (!empty) return;
+        if (html) empty.innerHTML = html;
+        empty.hidden = false;
+      };
+      const hideEmpty = () => {
+        const empty = $('#empty');
+        if (empty) empty.remove();
+      };
 
-      function makePlainEmbedUrl(id) {
+      const makePlainEmbedUrl = (id) => {
         const params = new URLSearchParams({
           controls: '1',
           modestbranding: '1',
@@ -254,713 +153,201 @@
           origin: location.origin,
         });
         return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params.toString()}`;
-      }
-
-      function iconPlay(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'; }
-      function iconPause(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'; }
-      function iconVol(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4h4l5 4V6L7 10H3zM16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.06c1.48-.74 2.5-2.26 2.5-4.03zM14 3.23v2.06c2.89 1 5 3.77 5 6.71s-2.11 5.71-5 6.71v2.06c4.01-1.1 7-4.79 7-8.77s-2.99-7.67-7-8.77z"/></svg>'; }
-      function iconMute(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.06c1.48-.74 2.5-2.26 2.5-4.03z" opacity=".3"/><path d="M12 4L7 8H3v8h4l5 4zM19 8.27L17.73 7 15 9.73 12.27 7 11 8.27 13.73 11 11 13.73 12.27 15 15 12.27 17.73 15 19 13.73 16.27 11z"/></svg>'; }
-      function iconEnterFs(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3H3v4h2V5h2V3zm10 0v2h2v2h2V3h-4zm2 14h-2v2h4v-4h-2v2zM5 17v-2H3v4h4v-2H5z"/></svg>'; }
-      function iconExitFs(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H7v2H5v2h4V7zm10 0h-2v2h-2v2h4V7zm-12 8H5v2h4v-4H7v2zm10-2h-2v4h4v-2h-2v-2z"/></svg>'; }
-
-      function setPlayUi(playing) {
-        els.play.innerHTML = playing ? iconPause() : iconPlay();
-        els.play.setAttribute('aria-label', playing ? 'Pauza' : 'Odtwórz');
-        els.play.title = playing ? 'Pauza' : 'Odtwórz';
-      }
-
-      function setMuteUi(muted) {
-        els.mute.innerHTML = muted ? iconMute() : iconVol();
-        els.mute.setAttribute('aria-label', muted ? 'Włącz dźwięk' : 'Wycisz');
-        els.mute.title = muted ? 'Włącz dźwięk' : 'Wycisz';
-      }
-
-      function setFullscreenUi(active) {
-        const label = active ? 'Zamknij pełny ekran' : 'Pełny ekran';
-        if (els.fs) {
-          els.fs.innerHTML = active ? iconExitFs() : iconEnterFs();
-          els.fs.setAttribute('aria-label', label);
-          els.fs.title = label;
-        }
-        document.body.dataset.fullscreen = active ? '1' : '0';
-      }
-
-      function applyStoredAudioPreferences() {
-        if (!player) return;
-        const savedVolume = loadVolume();
-        const savedMuted = loadMuted();
-        if (savedVolume !== null) {
-          try {
-            player.setVolume(savedVolume);
-            els.vol.value = String(savedVolume);
-            if (savedVolume > 0) lastVolume = savedVolume;
-          } catch {}
-        }
-        if (savedMuted === true) {
-          try { player.mute(); } catch {}
-          mutedState = true;
-        } else if (savedMuted === false) {
-          try { player.unMute(); } catch {}
-          mutedState = false;
-        } else if (savedVolume !== null && savedVolume <= 0) {
-          try { player.mute(); } catch {}
-          mutedState = true;
-        }
-        try {
-          const finalMuted = (typeof mutedState === 'boolean') ? mutedState : player.isMuted();
-          setMuteUi(Boolean(finalMuted));
-        } catch {}
-      }
-
-      function isFullscreenActive() {
-        return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
-      }
-
-      function clearHideControlsTimer() {
-        if (hideControlsTimer !== null) {
-          clearTimeout(hideControlsTimer);
-          hideControlsTimer = null;
-        }
-      }
-
-      function hideControls() {
-        if (controlsPinnedVisible) return;
-        const activeEl = document.activeElement;
-        if (activeEl && els.controls?.contains(activeEl) && lastInputWasKeyboard) return;
-        if (document.body.dataset.controls !== 'hidden') {
-          document.body.dataset.controls = 'hidden';
-        }
-      }
-
-      function scheduleControlsHide(force = false) {
-        if (controlsPinnedVisible) return;
-        const activeEl = document.activeElement;
-        if (activeEl && els.controls?.contains(activeEl) && lastInputWasKeyboard) return;
-        clearHideControlsTimer();
-        if (!force && !playingState) return;
-        hideControlsTimer = window.setTimeout(() => {
-          hideControlsTimer = null;
-          hideControls();
-        }, HIDE_DELAY);
-      }
-
-      function showControls(autoHide = true) {
-        document.body.dataset.controls = 'visible';
-        if (!controlsPinnedVisible && autoHide && playingState) scheduleControlsHide();
-        else clearHideControlsTimer();
-      }
-
-      const getVideoData = () => {
-        if (!player) return null;
-        try { return typeof player.getVideoData === 'function' ? player.getVideoData() : null; }
-        catch { return null; }
       };
 
-      const isLivePlayback = () => {
-        if (!player) return false;
-        const data = getVideoData();
-        if (data && typeof data.isLive === 'boolean') return data.isLive;
-        return false;
-      };
-
-      const getCurrentTime = () => {
-        if (!player) return 0;
-        const raw = Number(player.getCurrentTime?.() || 0);
-        return Number.isFinite(raw) ? Math.max(0, raw) : 0;
-      };
-
-      const getDuration = () => {
-        if (!player) return null;
-        const raw = Number(player.getDuration?.() || 0);
-        if (Number.isFinite(raw) && raw > 0) return raw;
-        return null;
-      };
-
-      const updateLiveDataset = (live) => {
-        if (lastIsLive === live) return;
-        lastIsLive = live;
-        document.body.dataset.live = live ? '1' : '0';
-      };
-
-      const adjustVolumeBy = (delta) => {
-        if (!player) return;
-        const current = Number(player.getVolume?.() ?? els.vol.value ?? 100);
-        const next = Math.max(0, Math.min(100, Math.round(current + delta)));
-        if (next <= 0) {
-          player.setVolume(0);
-          player.mute?.();
-          mutedState = true;
-          setMuteUi(true);
-          saveMuted(true);
-        } else {
-          player.unMute?.();
-          player.setVolume(next);
-          mutedState = false;
-          lastVolume = next;
-          setMuteUi(false);
-          saveMuted(false);
-        }
-        els.vol.value = String(next);
-        saveVolume(next);
-        showControls(true);
-      };
-
-      const seekBySeconds = (delta) => {
-        if (!player) return;
-        const cur = getCurrentTime();
-        const duration = lastKnownDuration ?? getDuration();
-        let target = cur + delta;
-        if (delta < 0) target = Math.max(0, target);
-        if (duration !== null) {
-          target = Math.max(0, Math.min(duration, target));
-        }
-        try { player.seekTo(target, true); }
-        catch {}
-        showControls(true);
-        pendingPlay = pendingPlay || delta > 0;
-      };
-
-      const resolvePlayerIframe = () => {
-        try {
-          if (player && typeof player.getIframe === 'function') {
-            const frame = player.getIframe();
-            if (frame instanceof HTMLElement) return frame;
-          }
-        } catch {}
-        return els.iframe;
-      };
-
-      const attachNativeFullscreenListeners = () => {
-        if (nativeFsListenersBound) return;
-        const iframe = resolvePlayerIframe();
+      const initPlainEmbed = (id) => {
+        document.body.dataset.mode = 'plain';
+        const iframe = $('#plain');
         if (!iframe) return;
-        nativeFsListenersBound = true;
-        const markEnter = () => {
-          nativeFullscreenActive = true;
-          document.body.dataset.nativeFs = '1';
-          document.body.dataset.controls = 'hidden';
-          controlsPinnedVisible = false;
-          setFullscreenUi(true);
-        };
-        const markExit = () => {
-          nativeFullscreenActive = false;
-          document.body.dataset.nativeFs = '0';
-          controlsPinnedVisible = false;
-          showControls(false);
-          setFullscreenUi(false);
-        };
-        iframe.addEventListener('webkitbeginfullscreen', markEnter);
-        iframe.addEventListener('webkitendfullscreen', markExit);
+        iframe.hidden = false;
+        iframe.src = makePlainEmbedUrl(id);
+        hideEmpty();
       };
 
-      const callNativeFullscreen = async (target) => {
-        if (!target) return false;
-        const nativeFns = [
-          'webkitEnterFullscreen',
-          'webkitRequestFullscreen',
-          'mozRequestFullScreen',
-          'msRequestFullscreen',
-          'requestFullscreen'
-        ];
-        for (const name of nativeFns) {
-          const fn = target[name];
-          if (typeof fn === 'function') {
-            try {
-              const result = fn.call(target);
-              if (result && typeof result.then === 'function') await result;
-              nativeFullscreenActive = true;
-              document.body.dataset.nativeFs = '1';
-              document.body.dataset.controls = 'hidden';
-              controlsPinnedVisible = false;
-              setFullscreenUi(true);
-              return true;
-            } catch (err) {}
-          }
+      const initVideoJs = (id) => {
+        document.body.dataset.mode = 'player';
+        const videoEl = $('#player');
+        const plain = $('#plain');
+        if (plain) {
+          plain.hidden = true;
+          plain.removeAttribute('src');
         }
-        return false;
-      };
-
-      const exitNativeFullscreen = async () => {
-        const iframe = resolvePlayerIframe();
-        if (!iframe) return false;
-        const exitFns = [
-          'webkitExitFullscreen',
-          'webkitCancelFullscreen',
-          'webkitCancelFullScreen',
-          'mozCancelFullScreen',
-          'msExitFullscreen'
-        ];
-        for (const name of exitFns) {
-          const fn = iframe[name];
-          if (typeof fn === 'function') {
-            try {
-              const result = fn.call(iframe);
-              if (result && typeof result.then === 'function') await result;
-              nativeFullscreenActive = false;
-              document.body.dataset.nativeFs = '0';
-              controlsPinnedVisible = false;
-              showControls(false);
-              setFullscreenUi(false);
-              return true;
-            } catch (err) {}
-          }
-        }
-        return false;
-      };
-
-      async function requestFullscreenOn(target) {
-        if (!target) return false;
-        const tryCall = async (fn, args = []) => {
-          try {
-            const result = fn.apply(target, args);
-            if (result && typeof result.then === 'function') await result;
-            return true;
-          } catch (err) {
-            return false;
-          }
-        };
-        if (typeof target.requestFullscreen === 'function') {
-          if (await tryCall(target.requestFullscreen, [{ navigationUI: 'hide' }])) return true;
-          if (await tryCall(target.requestFullscreen)) return true;
-        }
-        const vendorFns = [
-          'webkitRequestFullscreen',
-          'webkitEnterFullscreen',
-          'mozRequestFullScreen',
-          'msRequestFullscreen'
-        ];
-        for (const name of vendorFns) {
-          const fn = target[name];
-          if (typeof fn === 'function' && await tryCall(fn)) return true;
-        }
-        return false;
-      }
-
-      async function enterFullscreen() {
-        const iframe = resolvePlayerIframe();
-        if (preferNativeFullscreen && iframe) {
-          attachNativeFullscreenListeners();
-          if (await callNativeFullscreen(iframe)) {
-            return true;
-          }
-        }
-        const candidates = [resolvePlayerIframe(), els.stage, els.app, document.documentElement];
-        for (const candidate of candidates) {
-          if (await requestFullscreenOn(candidate)) return true;
-        }
-        return false;
-      }
-
-      async function exitFullscreen() {
-        if (nativeFullscreenActive) {
-          const exitedNative = await exitNativeFullscreen();
-          if (exitedNative) return true;
-        }
-        const doc = document;
-        const exitOrder = [
-          'exitFullscreen',
-          'webkitExitFullscreen',
-          'webkitCancelFullScreen',
-          'mozCancelFullScreen',
-          'msExitFullscreen'
-        ];
-        for (const name of exitOrder) {
-          const fn = doc[name];
-          if (typeof fn === 'function') {
-            try {
-              const result = fn.call(doc);
-              if (result && typeof result.then === 'function') await result;
-              return true;
-            } catch (err) {}
-          }
-        }
-        return false;
-      }
-
-      async function toggleFullscreen() {
-        if (nativeFullscreenActive || isFullscreenActive()) {
-          const exited = await exitFullscreen();
-          if (!exited) setFullscreenUi(false);
-          controlsPinnedVisible = false;
-          if (!nativeFullscreenActive) {
-            showControls(false);
-            if (playingState) scheduleControlsHide();
-          }
-        } else {
-          clearHideControlsTimer();
-          controlsPinnedVisible = true;
-          document.body.dataset.controls = 'visible';
-          const entered = await enterFullscreen();
-          if (!entered) {
-            controlsPinnedVisible = false;
-            if (!nativeFullscreenActive) showControls(false);
-            setFullscreenUi(false);
-          }
-        }
-      }
-
-      function setupVisibilitySensors() {
-        if (!els.stage) return;
-        const stage = els.stage;
-        const pointerActivity = () => {
-          lastInputWasKeyboard = false;
-          showControls(true);
-        };
-        const passiveTouch = { passive: true };
-        if (pointerEventsSupported) {
-          stage.addEventListener('pointermove', pointerActivity);
-          stage.addEventListener('pointerdown', pointerActivity);
-          stage.addEventListener('pointerup', pointerActivity);
-          stage.addEventListener('pointercancel', pointerActivity);
-          stage.addEventListener('mouseleave', () => {
-            lastInputWasKeyboard = false;
-            scheduleControlsHide();
-          });
-        } else {
-          stage.addEventListener('mousemove', pointerActivity);
-          stage.addEventListener('mousedown', pointerActivity);
-          stage.addEventListener('mouseup', () => {
-            lastInputWasKeyboard = false;
-            scheduleControlsHide();
-          });
-        }
-        stage.addEventListener('touchstart', pointerActivity, passiveTouch);
-        stage.addEventListener('touchmove', pointerActivity, passiveTouch);
-        stage.addEventListener('touchend', () => {
-          lastInputWasKeyboard = false;
-          scheduleControlsHide();
-        });
-        stage.addEventListener('touchcancel', () => {
-          lastInputWasKeyboard = false;
-          scheduleControlsHide();
-        });
-        stage.addEventListener('click', () => {
-          lastInputWasKeyboard = false;
-          showControls(true);
-        });
-        stage.addEventListener('dblclick', (e) => {
-          e.preventDefault();
-          togglePlayback();
-        });
-        if (els.controls) {
-          const controls = els.controls;
-          const enterControls = () => {
-            lastInputWasKeyboard = false;
-            showControls(false);
-          };
-          const leaveControls = () => {
-            lastInputWasKeyboard = false;
-            scheduleControlsHide();
-          };
-          if (pointerEventsSupported) {
-            controls.addEventListener('pointerenter', enterControls);
-            controls.addEventListener('pointerleave', leaveControls);
-            controls.addEventListener('pointerdown', () => {
-              lastInputWasKeyboard = false;
-            });
-          } else {
-            controls.addEventListener('mouseenter', enterControls);
-            controls.addEventListener('mouseleave', leaveControls);
-            controls.addEventListener('mousedown', () => {
-              lastInputWasKeyboard = false;
-            });
-          }
-          controls.addEventListener('touchstart', enterControls, passiveTouch);
-          controls.addEventListener('touchend', leaveControls);
-          controls.addEventListener('touchcancel', leaveControls);
-          controls.addEventListener('focusin', () => showControls(false));
-        }
-        document.addEventListener('keydown', () => {
-          lastInputWasKeyboard = true;
-          showControls(true);
-        });
-      }
-
-      const onFullscreenChange = () => {
-        if (nativeFullscreenActive) return;
-        const active = isFullscreenActive();
-        setFullscreenUi(active);
-        if (active) {
-          controlsPinnedVisible = true;
-          clearHideControlsTimer();
-          document.body.dataset.controls = 'visible';
-        } else {
-          controlsPinnedVisible = false;
-          showControls(false);
-        }
-      };
-
-      document.addEventListener('fullscreenchange', onFullscreenChange);
-      document.addEventListener('webkitfullscreenchange', onFullscreenChange);
-
-      function updateUi() {
-        if (!player || !ready) return;
-        const duration = getDuration();
-        lastKnownDuration = duration;
-        const curRaw = getCurrentTime();
-        const cur = Math.floor(curRaw);
-        const live = duration === null && isLivePlayback();
-        updateLiveDataset(live);
-        els.cur.textContent = fmt(cur);
-        if (duration !== null) {
-          const dur = Math.floor(duration);
-          els.dur.textContent = fmt(dur);
-        } else {
-          els.dur.textContent = live ? 'NA ŻYWO' : '--:--';
-        }
-        if (duration !== null) {
-          const sliderMax = Math.max(1, Math.round(duration * 100));
-          lastSeekMax = sliderMax;
-          if (els.seek.max !== String(sliderMax)) {
-            els.seek.max = String(sliderMax);
-          }
-          if (!els.seek.matches(':active')) {
-            const sliderValue = Math.min(sliderMax, Math.round(curRaw * 100));
-            els.seek.value = String(sliderValue);
-          }
-          els.seek.disabled = false;
-        } else {
-          lastSeekMax = 0;
-          els.seek.disabled = true;
-          if (!els.seek.matches(':active')) {
-            els.seek.value = '0';
-          }
-        }
-        const muted = (typeof mutedState === 'boolean') ? mutedState : player.isMuted();
-        setMuteUi(muted);
-        const vol = player.getVolume?.();
-        if (typeof vol === 'number' && !els.vol.matches(':active')) {
-          els.vol.value = String(vol);
-        }
-        const st = player.getPlayerState?.();
-        // 1=playing, 2=paused, 0=ended, 3=buffer, -1=unstarted
-        // Traktuj buforowanie/unstarted jako "odtwarzanie" gdy mamy pendingPlay, by uniknąć migania
-        const playing = (st === 1) || (pendingPlay && (st === 3 || st === -1));
-        setPlayUi(playing);
-        const wasPlaying = playingState;
-        playingState = playing;
-        document.body.dataset.playing = playing ? '1' : '0';
-        if (!controlsPinnedVisible && playing && !wasPlaying && document.body.dataset.controls !== 'hidden') {
-          scheduleControlsHide();
-        }
-      }
-
-      function ensureTicker() {
-        if (!ready || tickerFrame !== null) return;
-        updateUi();
-        const tick = () => {
-          if (!player || !ready) { tickerFrame = null; return; }
-          updateUi();
-          tickerFrame = requestAnimationFrame(tick);
-        };
-        tickerFrame = requestAnimationFrame(tick);
-      }
-
-      function stopTicker() {
-        if (tickerFrame !== null) {
-          cancelAnimationFrame(tickerFrame);
-          tickerFrame = null;
-        }
-      }
-
-      function togglePlayback() {
-        if (!player || !ready) return;
-        const st = player.getPlayerState?.();
-        if (st === 1) {
-          pendingPlay = false;
-          player.pauseVideo();
-          setPlayUi(false);
-          stopTicker();
-          showControls(false);
-        } else {
-          pendingPlay = true;
-          player.playVideo();
-          setPlayUi(true);
-          if (ready) ensureTicker();
-          showControls(true);
-        }
-      }
-
-      function setupControls() {
-        els.play.addEventListener('click', () => {
-          togglePlayback();
-        });
-        els.mute.addEventListener('click', () => {
-          if (!player) return;
-          const currentlyMuted = (typeof mutedState === 'boolean') ? mutedState : player.isMuted();
-          if (currentlyMuted) {
-            // Unmute i przywrócenie ostatniej sensownej głośności
-            player.unMute();
-            const restore = Math.max(1, Number(lastVolume || 100));
-            player.setVolume(restore);
-            els.vol.value = String(restore);
-            mutedState = false;
-            setMuteUi(false);
-            saveMuted(false);
-            saveVolume(restore);
-          } else {
-            // Zapamiętaj aktualną głośność (>0) i wycisz
-            const curV = Number(player.getVolume?.() || els.vol.value || 100);
-            if (curV > 0) lastVolume = curV;
-            player.mute();
-            mutedState = true;
-            setMuteUi(true);
-            saveMuted(true);
-          }
-          showControls(false);
-        });
-        els.vol.addEventListener('input', (e) => {
-          if (!player) return;
-          const v = Number(e.target.value);
-          const vv = Math.max(0, Math.min(100, v));
-          if (vv <= 0) { player.mute(); mutedState = true; setMuteUi(true); saveMuted(true); }
-          else { player.unMute(); mutedState = false; setMuteUi(false); lastVolume = vv; saveMuted(false); }
-          player.setVolume(vv);
-          saveVolume(vv);
-          showControls(false);
-        });
-        els.seek.addEventListener('input', (e) => {
-          if (!player) return;
-          if (els.seek.disabled) return;
-          const duration = lastKnownDuration ?? getDuration();
-          if (!duration || duration <= 0) return;
-          const max = lastSeekMax || Number(e.target.max) || 0;
-          if (!max) return;
-          const rawValue = Math.max(0, Math.min(max, Number(e.target.value)));
-          const ratio = rawValue / max;
-          const target = ratio * duration;
-          try { player.seekTo(target, true); } catch {}
-          updateUi();
-          showControls(false);
-        });
-        els.fs?.addEventListener('click', async () => {
-          showControls(false);
-          await toggleFullscreen();
-        });
-      }
-
-      function createPlayer(id) {
-        els.iframe.src = makeEmbedUrl(id);
-        els.iframe.hidden = false;
-        els.shareBlock.hidden = false; // overlay blokujący obszar przycisku „Udostępnij”
-        els.shareBlock.removeAttribute('aria-hidden');
-        els.logoBlock.hidden = false;  // overlay blokujący obszar logo
-        els.logoBlock.removeAttribute('aria-hidden');
-        els.controls.hidden = false;
-        els.empty?.remove();
-
-        return new Promise((resolve) => {
-          loadYouTubeIframeAPI().then(() => {
-            player = new YT.Player(els.iframe, {
-              events: {
-                onReady: () => {
-                  ready = true;
-                  try {
-                    mutedState = player.isMuted();
-                    const v0 = Number(player.getVolume?.() || 100);
-                    if (v0 > 0) lastVolume = v0;
-                  } catch {}
-                  attachNativeFullscreenListeners();
-                  applyStoredAudioPreferences();
-                  resolve();
-                },
-                onStateChange: (e) => {
-                  const state = e?.data;
-                  // Wyzeruj pendingPlay po przejściu do stanów końcowych/ustalonych
-                  if (state === 1 || state === 2 || state === 0) pendingPlay = false;
-                  const shouldTick = state === 1 || state === 3 || (state === -1 && pendingPlay);
-                  if (shouldTick) ensureTicker();
-                  else stopTicker();
-                  if (state === 1 && !controlsPinnedVisible) {
-                    scheduleControlsHide(true);
-                  } else if (state === 0 || state === 2) {
-                    showControls(false);
-                  }
-                  updateUi();
-                },
-              }
-            });
-          });
-        });
-      }
-
-      function saveToSession(id) { try { sessionStorage.setItem('yt_id', id); } catch {} }
-      function loadFromSession() { try { return sessionStorage.getItem('yt_id') || ''; } catch { return ''; } }
-      function saveTypeToSession(type) { try { sessionStorage.setItem('yt_type', type); } catch {} }
-      function loadTypeFromSession() { try { return sessionStorage.getItem('yt_type') || ''; } catch { return ''; } }
-      function stripUrlToHostOnly() { try { const to = location.origin + '/'; if (location.href !== to) history.replaceState({}, '', to); } catch {} }
-
-      function setupKeyboard() {
-        document.addEventListener('keydown', (e) => {
-          if (!player || !ready) return;
-          const tag = (e.target && e.target.tagName || '').toLowerCase();
-          if (tag === 'input' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
-          if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            seekBySeconds(-5);
-            updateUi();
-          } else if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            seekBySeconds(5);
-            updateUi();
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            adjustVolumeBy(5);
-            updateUi();
-          } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            adjustVolumeBy(-5);
-            updateUi();
-          } else if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'k' || e.key === 'K') {
-            e.preventDefault();
-            togglePlayback();
-          }
-        }, { passive: false });
-      }
-
-      function initPlainEmbed(id) {
-        document.body.dataset.mode = 'embed';
-        document.body.dataset.controls = 'visible';
-        stopTicker();
-        player = null;
-        ready = false;
-        els.shareBlock.hidden = true;
-        els.shareBlock.setAttribute('aria-hidden', 'true');
-        els.logoBlock.hidden = true;
-        els.logoBlock.setAttribute('aria-hidden', 'true');
-        els.controls.hidden = true;
-        els.empty?.remove();
-        els.iframe.hidden = false;
-        els.iframe.src = makePlainEmbedUrl(id);
-      }
-
-      async function init() {
-        const params = new URLSearchParams(location.search);
-        const id = (params.get('id') || loadFromSession() || '').trim();
-        const typeParam = (params.get('type') || loadTypeFromSession() || '').trim();
-        const type = typeParam === '2' ? '2' : '1';
-        if (!id) return; // pozostaw ekran pusty z instrukcją
-        saveToSession(id);
-        saveTypeToSession(type);
-        stripUrlToHostOnly();
-        document.body.dataset.mode = 'custom';
-        if (type === '2') {
-          initPlainEmbed(id);
+        if (!videoEl) {
+          showEmpty('<div><strong>Brak elementu odtwarzacza.</strong></div>');
           return;
         }
-        setupControls();
-        setupKeyboard();
-        setupVisibilitySensors();
-        setFullscreenUi(isFullscreenActive());
-        showControls(false);
-        // Ikony domyślne zanim player zgłosi onReady
-        els.play.innerHTML = iconPlay();
-        els.mute.innerHTML = iconVol();
-        await createPlayer(id);
-        updateUi();
-      }
+        videoEl.classList.add('vjs-default-skin');
+        const poster = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+        videoEl.setAttribute('poster', poster);
+        hideEmpty();
 
-      init();
+        const waitForVideoJs = () => new Promise((resolve, reject) => {
+          let tries = 0;
+          const tick = () => {
+            tries += 1;
+            if (window.videojs && window.videojs.Youtube) {
+              resolve(window.videojs);
+              return;
+            }
+            if (tries > 120) {
+              reject(new Error('Nie udało się załadować Video.js'));
+              return;
+            }
+            setTimeout(tick, 100);
+          };
+          tick();
+        });
+
+        waitForVideoJs().then((videojs) => {
+          const options = {
+            controls: true,
+            autoplay: false,
+            preload: 'auto',
+            poster,
+            techOrder: ['youtube'],
+            sources: [{
+              type: 'video/youtube',
+              src: `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`,
+            }],
+            youtube: {
+              ytControls: 0,
+              modestbranding: 1,
+              rel: 0,
+              playsinline: 1,
+              ivLoadPolicy: 3,
+              enablePrivacyEnhancedMode: true,
+            },
+          };
+
+          const player = videojs(videoEl, options, function onReady() {
+            const savedVolume = loadVolume();
+            const savedMuted = loadMuted();
+            if (savedMuted !== null) this.muted(savedMuted);
+            if (savedVolume !== null) this.volume(savedVolume);
+            showMessage('Odtwarzacz gotowy');
+          });
+
+          player.on('volumechange', () => {
+            try {
+              const vol = Math.round(player.volume() * 100);
+              saveLocal(STORAGE_KEYS.volume, String(clamp(vol, 0, 100)));
+              saveLocal(STORAGE_KEYS.muted, player.muted() ? '1' : '0');
+            } catch {}
+          });
+
+          player.on('error', () => {
+            const err = player.error();
+            const msg = err && err.message ? err.message : 'Nieznany błąd odtwarzacza.';
+            showMessage(msg, 4000);
+          });
+
+          player.on('ended', () => {
+            showMessage('Koniec odtwarzania');
+          });
+
+          const adjustVolumeBy = (delta) => {
+            const current = player.muted() ? 0 : player.volume();
+            const next = clamp(current + delta, 0, 1);
+            player.muted(next <= 0);
+            player.volume(next);
+            showMessage(`Głośność: ${Math.round(player.volume() * 100)}%`);
+          };
+
+          const seekBySeconds = (seconds) => {
+            if (player.scrubbing()) return;
+            const duration = player.duration();
+            if (!Number.isFinite(duration)) {
+              showMessage('Przewijanie niedostępne dla transmisji na żywo');
+              return;
+            }
+            const next = clamp(player.currentTime() + seconds, 0, duration);
+            player.currentTime(next);
+            showMessage(`Pozycja: ${Math.floor(next)}s`);
+          };
+
+          const handleKey = (event) => {
+            if (!player || player.ended()) return;
+            const tag = (event.target && event.target.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea') return;
+            if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+            switch (event.key) {
+              case ' ':
+              case 'Spacebar':
+              case 'k':
+              case 'K':
+                event.preventDefault();
+                if (player.paused()) player.play(); else player.pause();
+                break;
+              case 'ArrowLeft':
+                event.preventDefault();
+                seekBySeconds(-5);
+                break;
+              case 'ArrowRight':
+                event.preventDefault();
+                seekBySeconds(5);
+                break;
+              case 'ArrowUp':
+                event.preventDefault();
+                adjustVolumeBy(0.05);
+                break;
+              case 'ArrowDown':
+                event.preventDefault();
+                adjustVolumeBy(-0.05);
+                break;
+              case 'f':
+              case 'F':
+                event.preventDefault();
+                if (player.isFullscreen()) {
+                  player.exitFullscreen();
+                } else {
+                  player.requestFullscreen();
+                }
+                break;
+              default:
+                break;
+            }
+          };
+
+          document.addEventListener('keydown', handleKey);
+
+          player.on('dispose', () => {
+            document.removeEventListener('keydown', handleKey);
+          });
+
+          // prefer natywny fullscreen na urządzeniach dotykowych
+          if (/(iPhone|iPad|iPod|Android)/i.test(navigator.userAgent || '')) {
+            player.on('fullscreenchange', () => {
+              document.body.dataset.nativeFs = player.isFullscreen() ? '1' : '0';
+            });
+          }
+
+        }).catch((err) => {
+          showEmpty(`<div><strong>Błąd inicjalizacji.</strong><div>${err.message || err}</div></div>`);
+        });
+      };
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(location.search);
+        const id = (params.get('id') || readSession(SESSION_KEYS.id) || '').trim();
+        const typeParam = (params.get('type') || readSession(SESSION_KEYS.type) || '').trim();
+        const type = typeParam === '2' ? '2' : '1';
+
+        if (!id) {
+          showEmpty('<div><strong>Brak parametru ID filmu.</strong><div>Dodaj ?id=&lt;YouTubeID&gt; do adresu.</div></div>');
+          return;
+        }
+
+        saveSession(SESSION_KEYS.id, id);
+        saveSession(SESSION_KEYS.type, type);
+        stripUrlToHostOnly();
+
+        if (type === '2') {
+          initPlainEmbed(id);
+        } else {
+          initVideoJs(id);
+        }
+      });
     </script>
   </body>
-  </html>
+</html>
