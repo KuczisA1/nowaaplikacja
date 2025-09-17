@@ -71,6 +71,7 @@
       body[data-controls="hidden"] .stage { cursor: none; }
       body[data-touch="1"] .stage { cursor: auto; }
       body[data-touch="1"] .controls { touch-action: manipulation; }
+      body[data-native-fs="1"] .controls { display: none !important; }
 
       /* Grubszy slider na mobile/desktop */
       input[type="range"] { -webkit-appearance: none; height: 24px; background: transparent; }
@@ -101,16 +102,16 @@
         <div id="logoBlock" class="overlay-logo" title="Zablokowany obszar logo" hidden></div>
       </div>
       <div class="controls" id="controls" hidden>
-        <button id="play" class="btn" aria-label="Odtwórz" title="Odtwórz"></button>
+        <button id="play" class="btn" type="button" aria-label="Odtwórz" title="Odtwórz"></button>
         <div class="bar">
           <span id="cur" class="time">00:00</span>
           <input id="seek" class="range" type="range" min="0" max="10000" step="1" value="0" />
           <span id="dur" class="time">00:00</span>
         </div>
         <div class="bar">
-          <button id="mute" class="btn" aria-label="Wycisz" title="Wycisz"></button>
+          <button id="mute" class="btn" type="button" aria-label="Wycisz" title="Wycisz"></button>
           <input id="vol" class="range vol" type="range" min="0" max="100" step="1" value="100" />
-          <button id="fs" class="btn" aria-label="Pełny ekran" title="Pełny ekran"></button>
+          <button id="fs" class="btn" type="button" aria-label="Pełny ekran" title="Pełny ekran"></button>
         </div>
       </div>
     </div>
@@ -153,10 +154,13 @@
       const pointerLikelyTouch = Boolean(coarsePointer || hasTouchPoints);
       const pointerEventsSupported = typeof window !== 'undefined' && 'PointerEvent' in window;
       const HIDE_DELAY = pointerLikelyTouch ? 2200 : 1200;
+      const preferNativeFullscreen = pointerLikelyTouch;
 
       document.body.dataset.touch = pointerLikelyTouch ? '1' : '0';
+      document.body.dataset.nativeFs = '0';
       let controlsPinnedVisible = false;
       document.body.dataset.controls = 'visible';
+      document.body.dataset.live = '0';
 
       let player = null;
       let tickerFrame = null;
@@ -168,6 +172,11 @@
       let playingState = false;
       let hideControlsTimer = null;
       let lastInputWasKeyboard = false;
+      let lastKnownDuration = null; // aktualna znana długość materiału (sekundy, null dla live)
+      let lastSeekMax = 0; // ostatnia wartość max suwaka czasu
+      let lastIsLive = false; // cache flagi live do UI
+      let nativeFullscreenActive = false; // czy funkcjonujemy w natywnym trybie fullscreen (mobile)
+      let nativeFsListenersBound = false;
       const STORAGE_KEYS = {
         volume: 'chem.film.volume',
         muted: 'chem.film.muted',
@@ -341,6 +350,76 @@
         else clearHideControlsTimer();
       }
 
+      const getVideoData = () => {
+        if (!player) return null;
+        try { return typeof player.getVideoData === 'function' ? player.getVideoData() : null; }
+        catch { return null; }
+      };
+
+      const isLivePlayback = () => {
+        if (!player) return false;
+        const data = getVideoData();
+        if (data && typeof data.isLive === 'boolean') return data.isLive;
+        return false;
+      };
+
+      const getCurrentTime = () => {
+        if (!player) return 0;
+        const raw = Number(player.getCurrentTime?.() || 0);
+        return Number.isFinite(raw) ? Math.max(0, raw) : 0;
+      };
+
+      const getDuration = () => {
+        if (!player) return null;
+        const raw = Number(player.getDuration?.() || 0);
+        if (Number.isFinite(raw) && raw > 0) return raw;
+        return null;
+      };
+
+      const updateLiveDataset = (live) => {
+        if (lastIsLive === live) return;
+        lastIsLive = live;
+        document.body.dataset.live = live ? '1' : '0';
+      };
+
+      const adjustVolumeBy = (delta) => {
+        if (!player) return;
+        const current = Number(player.getVolume?.() ?? els.vol.value ?? 100);
+        const next = Math.max(0, Math.min(100, Math.round(current + delta)));
+        if (next <= 0) {
+          player.setVolume(0);
+          player.mute?.();
+          mutedState = true;
+          setMuteUi(true);
+          saveMuted(true);
+        } else {
+          player.unMute?.();
+          player.setVolume(next);
+          mutedState = false;
+          lastVolume = next;
+          setMuteUi(false);
+          saveMuted(false);
+        }
+        els.vol.value = String(next);
+        saveVolume(next);
+        showControls(true);
+      };
+
+      const seekBySeconds = (delta) => {
+        if (!player) return;
+        const cur = getCurrentTime();
+        const duration = lastKnownDuration ?? getDuration();
+        let target = cur + delta;
+        if (delta < 0) target = Math.max(0, target);
+        if (duration !== null) {
+          target = Math.max(0, Math.min(duration, target));
+        }
+        try { player.seekTo(target, true); }
+        catch {}
+        showControls(true);
+        pendingPlay = pendingPlay || delta > 0;
+      };
+
       const resolvePlayerIframe = () => {
         try {
           if (player && typeof player.getIframe === 'function') {
@@ -349,6 +428,84 @@
           }
         } catch {}
         return els.iframe;
+      };
+
+      const attachNativeFullscreenListeners = () => {
+        if (nativeFsListenersBound) return;
+        const iframe = resolvePlayerIframe();
+        if (!iframe) return;
+        nativeFsListenersBound = true;
+        const markEnter = () => {
+          nativeFullscreenActive = true;
+          document.body.dataset.nativeFs = '1';
+          document.body.dataset.controls = 'hidden';
+          controlsPinnedVisible = false;
+          setFullscreenUi(true);
+        };
+        const markExit = () => {
+          nativeFullscreenActive = false;
+          document.body.dataset.nativeFs = '0';
+          controlsPinnedVisible = false;
+          showControls(false);
+          setFullscreenUi(false);
+        };
+        iframe.addEventListener('webkitbeginfullscreen', markEnter);
+        iframe.addEventListener('webkitendfullscreen', markExit);
+      };
+
+      const callNativeFullscreen = async (target) => {
+        if (!target) return false;
+        const nativeFns = [
+          'webkitEnterFullscreen',
+          'webkitRequestFullscreen',
+          'mozRequestFullScreen',
+          'msRequestFullscreen',
+          'requestFullscreen'
+        ];
+        for (const name of nativeFns) {
+          const fn = target[name];
+          if (typeof fn === 'function') {
+            try {
+              const result = fn.call(target);
+              if (result && typeof result.then === 'function') await result;
+              nativeFullscreenActive = true;
+              document.body.dataset.nativeFs = '1';
+              document.body.dataset.controls = 'hidden';
+              controlsPinnedVisible = false;
+              setFullscreenUi(true);
+              return true;
+            } catch (err) {}
+          }
+        }
+        return false;
+      };
+
+      const exitNativeFullscreen = async () => {
+        const iframe = resolvePlayerIframe();
+        if (!iframe) return false;
+        const exitFns = [
+          'webkitExitFullscreen',
+          'webkitCancelFullscreen',
+          'webkitCancelFullScreen',
+          'mozCancelFullScreen',
+          'msExitFullscreen'
+        ];
+        for (const name of exitFns) {
+          const fn = iframe[name];
+          if (typeof fn === 'function') {
+            try {
+              const result = fn.call(iframe);
+              if (result && typeof result.then === 'function') await result;
+              nativeFullscreenActive = false;
+              document.body.dataset.nativeFs = '0';
+              controlsPinnedVisible = false;
+              showControls(false);
+              setFullscreenUi(false);
+              return true;
+            } catch (err) {}
+          }
+        }
+        return false;
       };
 
       async function requestFullscreenOn(target) {
@@ -380,6 +537,13 @@
       }
 
       async function enterFullscreen() {
+        const iframe = resolvePlayerIframe();
+        if (preferNativeFullscreen && iframe) {
+          attachNativeFullscreenListeners();
+          if (await callNativeFullscreen(iframe)) {
+            return true;
+          }
+        }
         const candidates = [resolvePlayerIframe(), els.stage, els.app, document.documentElement];
         for (const candidate of candidates) {
           if (await requestFullscreenOn(candidate)) return true;
@@ -388,6 +552,10 @@
       }
 
       async function exitFullscreen() {
+        if (nativeFullscreenActive) {
+          const exitedNative = await exitNativeFullscreen();
+          if (exitedNative) return true;
+        }
         const doc = document;
         const exitOrder = [
           'exitFullscreen',
@@ -410,12 +578,24 @@
       }
 
       async function toggleFullscreen() {
-        if (isFullscreenActive()) {
+        if (nativeFullscreenActive || isFullscreenActive()) {
           const exited = await exitFullscreen();
           if (!exited) setFullscreenUi(false);
+          controlsPinnedVisible = false;
+          if (!nativeFullscreenActive) {
+            showControls(false);
+            if (playingState) scheduleControlsHide();
+          }
         } else {
+          clearHideControlsTimer();
+          controlsPinnedVisible = true;
+          document.body.dataset.controls = 'visible';
           const entered = await enterFullscreen();
-          if (!entered) setFullscreenUi(false);
+          if (!entered) {
+            controlsPinnedVisible = false;
+            if (!nativeFullscreenActive) showControls(false);
+            setFullscreenUi(false);
+          }
         }
       }
 
@@ -497,10 +677,17 @@
       }
 
       const onFullscreenChange = () => {
+        if (nativeFullscreenActive) return;
         const active = isFullscreenActive();
         setFullscreenUi(active);
-        if (active && playingState) showControls(true);
-        else showControls(false);
+        if (active) {
+          controlsPinnedVisible = true;
+          clearHideControlsTimer();
+          document.body.dataset.controls = 'visible';
+        } else {
+          controlsPinnedVisible = false;
+          showControls(false);
+        }
       };
 
       document.addEventListener('fullscreenchange', onFullscreenChange);
@@ -508,17 +695,36 @@
 
       function updateUi() {
         if (!player || !ready) return;
-        const durRaw = Math.max(0, Number(player.getDuration() || 0));
-        const curRaw = Math.max(0, Number(player.getCurrentTime() || 0));
-        const dur = Math.floor(durRaw);
+        const duration = getDuration();
+        lastKnownDuration = duration;
+        const curRaw = getCurrentTime();
         const cur = Math.floor(curRaw);
+        const live = duration === null && isLivePlayback();
+        updateLiveDataset(live);
         els.cur.textContent = fmt(cur);
-        els.dur.textContent = fmt(dur);
-        if (durRaw > 0 && !els.seek.matches(':active')) {
-          const sliderMax = Math.round(durRaw * 100);
-          const sliderValue = Math.min(sliderMax, Math.round(curRaw * 100));
-          els.seek.max = String(sliderMax);
-          els.seek.value = String(sliderValue);
+        if (duration !== null) {
+          const dur = Math.floor(duration);
+          els.dur.textContent = fmt(dur);
+        } else {
+          els.dur.textContent = live ? 'NA ŻYWO' : '--:--';
+        }
+        if (duration !== null) {
+          const sliderMax = Math.max(1, Math.round(duration * 100));
+          lastSeekMax = sliderMax;
+          if (els.seek.max !== String(sliderMax)) {
+            els.seek.max = String(sliderMax);
+          }
+          if (!els.seek.matches(':active')) {
+            const sliderValue = Math.min(sliderMax, Math.round(curRaw * 100));
+            els.seek.value = String(sliderValue);
+          }
+          els.seek.disabled = false;
+        } else {
+          lastSeekMax = 0;
+          els.seek.disabled = true;
+          if (!els.seek.matches(':active')) {
+            els.seek.value = '0';
+          }
         }
         const muted = (typeof mutedState === 'boolean') ? mutedState : player.isMuted();
         setMuteUi(muted);
@@ -558,7 +764,7 @@
       }
 
       function togglePlayback() {
-        if (!player) return;
+        if (!player || !ready) return;
         const st = player.getPlayerState?.();
         if (st === 1) {
           pendingPlay = false;
@@ -615,8 +821,16 @@
         });
         els.seek.addEventListener('input', (e) => {
           if (!player) return;
-          const pos = Number(e.target.value) / 100;
-          player.seekTo(pos, true);
+          if (els.seek.disabled) return;
+          const duration = lastKnownDuration ?? getDuration();
+          if (!duration || duration <= 0) return;
+          const max = lastSeekMax || Number(e.target.max) || 0;
+          if (!max) return;
+          const rawValue = Math.max(0, Math.min(max, Number(e.target.value)));
+          const ratio = rawValue / max;
+          const target = ratio * duration;
+          try { player.seekTo(target, true); } catch {}
+          updateUi();
           showControls(false);
         });
         els.fs?.addEventListener('click', async () => {
@@ -646,6 +860,7 @@
                     const v0 = Number(player.getVolume?.() || 100);
                     if (v0 > 0) lastVolume = v0;
                   } catch {}
+                  attachNativeFullscreenListeners();
                   applyStoredAudioPreferences();
                   resolve();
                 },
@@ -682,14 +897,19 @@
           if (tag === 'input' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
           if (e.key === 'ArrowLeft') {
             e.preventDefault();
-            const t = Number(player.getCurrentTime?.() || 0) - 5;
-            player.seekTo(Math.max(0, t), true);
+            seekBySeconds(-5);
             updateUi();
           } else if (e.key === 'ArrowRight') {
             e.preventDefault();
-            const max = Number(player.getDuration?.() || 0);
-            const t = Number(player.getCurrentTime?.() || 0) + 5;
-            player.seekTo(Math.min(max, t), true);
+            seekBySeconds(5);
+            updateUi();
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            adjustVolumeBy(5);
+            updateUi();
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            adjustVolumeBy(-5);
             updateUi();
           } else if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'k' || e.key === 'K') {
             e.preventDefault();
