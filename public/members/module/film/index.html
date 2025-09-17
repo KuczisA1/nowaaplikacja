@@ -67,7 +67,7 @@
       body[data-mode="embed"] .overlay-block,
       body[data-mode="embed"] .overlay-logo { display: none !important; }
 
-      body[data-controls="hidden"] .controls { opacity: 0; transform: translateY(36px); pointer-events: none; }
+      body[data-controls="hidden"] .controls { opacity: 0; transform: translate3d(0, calc(100% + var(--pad)), 0); pointer-events: none; }
       body[data-controls="hidden"] .stage { cursor: none; }
       body[data-touch="1"] .stage { cursor: auto; }
       body[data-touch="1"] .controls { touch-action: manipulation; }
@@ -151,7 +151,8 @@
       const coarsePointer = matchPointerQuery('(pointer: coarse)') || matchPointerQuery('(any-pointer: coarse)');
       const hasTouchPoints = (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) || ('ontouchstart' in window);
       const pointerLikelyTouch = Boolean(coarsePointer || hasTouchPoints);
-      const HIDE_DELAY = pointerLikelyTouch ? 1200 : 1000;
+      const pointerEventsSupported = typeof window !== 'undefined' && 'PointerEvent' in window;
+      const HIDE_DELAY = pointerLikelyTouch ? 2200 : 1200;
 
       document.body.dataset.touch = pointerLikelyTouch ? '1' : '0';
       let controlsPinnedVisible = false;
@@ -340,73 +341,154 @@
         else clearHideControlsTimer();
       }
 
-      async function enterFullscreen() {
-        const target = els.app || document.documentElement;
-        if (target && target.requestFullscreen) {
+      const resolvePlayerIframe = () => {
+        try {
+          if (player && typeof player.getIframe === 'function') {
+            const frame = player.getIframe();
+            if (frame instanceof HTMLElement) return frame;
+          }
+        } catch {}
+        return els.iframe;
+      };
+
+      async function requestFullscreenOn(target) {
+        if (!target) return false;
+        const tryCall = async (fn, args = []) => {
           try {
-            await target.requestFullscreen({ navigationUI: 'hide' });
+            const result = fn.apply(target, args);
+            if (result && typeof result.then === 'function') await result;
             return true;
-          } catch (err) {}
+          } catch (err) {
+            return false;
+          }
+        };
+        if (typeof target.requestFullscreen === 'function') {
+          if (await tryCall(target.requestFullscreen, [{ navigationUI: 'hide' }])) return true;
+          if (await tryCall(target.requestFullscreen)) return true;
         }
-        const iframe = els.iframe;
-        if (iframe && iframe.requestFullscreen) {
-          try { await iframe.requestFullscreen(); return true; } catch (err) {}
+        const vendorFns = [
+          'webkitRequestFullscreen',
+          'webkitEnterFullscreen',
+          'mozRequestFullScreen',
+          'msRequestFullscreen'
+        ];
+        for (const name of vendorFns) {
+          const fn = target[name];
+          if (typeof fn === 'function' && await tryCall(fn)) return true;
         }
-        const webkitTarget = iframe || target;
-        const webkitRequest = webkitTarget && (webkitTarget.webkitRequestFullscreen || webkitTarget.webkitEnterFullscreen);
-        if (webkitRequest) {
-          try { webkitRequest.call(webkitTarget); return true; } catch (err) {}
+        return false;
+      }
+
+      async function enterFullscreen() {
+        const candidates = [resolvePlayerIframe(), els.stage, els.app, document.documentElement];
+        for (const candidate of candidates) {
+          if (await requestFullscreenOn(candidate)) return true;
         }
         return false;
       }
 
       async function exitFullscreen() {
-        if (document.exitFullscreen) {
-          try { await document.exitFullscreen(); return true; } catch (err) {}
-        }
-        const webkitExit = document.webkitExitFullscreen;
-        if (webkitExit) {
-          try { webkitExit.call(document); return true; } catch (err) {}
+        const doc = document;
+        const exitOrder = [
+          'exitFullscreen',
+          'webkitExitFullscreen',
+          'webkitCancelFullScreen',
+          'mozCancelFullScreen',
+          'msExitFullscreen'
+        ];
+        for (const name of exitOrder) {
+          const fn = doc[name];
+          if (typeof fn === 'function') {
+            try {
+              const result = fn.call(doc);
+              if (result && typeof result.then === 'function') await result;
+              return true;
+            } catch (err) {}
+          }
         }
         return false;
       }
 
       async function toggleFullscreen() {
-        if (isFullscreenActive()) await exitFullscreen();
-        else await enterFullscreen();
+        if (isFullscreenActive()) {
+          const exited = await exitFullscreen();
+          if (!exited) setFullscreenUi(false);
+        } else {
+          const entered = await enterFullscreen();
+          if (!entered) setFullscreenUi(false);
+        }
       }
 
       function setupVisibilitySensors() {
         if (!els.stage) return;
+        const stage = els.stage;
         const pointerActivity = () => {
           lastInputWasKeyboard = false;
           showControls(true);
         };
-        els.stage.addEventListener('pointermove', pointerActivity);
-        els.stage.addEventListener('pointerdown', pointerActivity);
-        els.stage.addEventListener('pointerup', pointerActivity);
-        els.stage.addEventListener('pointercancel', pointerActivity);
-        els.stage.addEventListener('mouseleave', () => {
+        const passiveTouch = { passive: true };
+        if (pointerEventsSupported) {
+          stage.addEventListener('pointermove', pointerActivity);
+          stage.addEventListener('pointerdown', pointerActivity);
+          stage.addEventListener('pointerup', pointerActivity);
+          stage.addEventListener('pointercancel', pointerActivity);
+          stage.addEventListener('mouseleave', () => {
+            lastInputWasKeyboard = false;
+            scheduleControlsHide();
+          });
+        } else {
+          stage.addEventListener('mousemove', pointerActivity);
+          stage.addEventListener('mousedown', pointerActivity);
+          stage.addEventListener('mouseup', () => {
+            lastInputWasKeyboard = false;
+            scheduleControlsHide();
+          });
+        }
+        stage.addEventListener('touchstart', pointerActivity, passiveTouch);
+        stage.addEventListener('touchmove', pointerActivity, passiveTouch);
+        stage.addEventListener('touchend', () => {
           lastInputWasKeyboard = false;
           scheduleControlsHide();
         });
-        els.stage.addEventListener('dblclick', (e) => {
+        stage.addEventListener('touchcancel', () => {
+          lastInputWasKeyboard = false;
+          scheduleControlsHide();
+        });
+        stage.addEventListener('click', () => {
+          lastInputWasKeyboard = false;
+          showControls(true);
+        });
+        stage.addEventListener('dblclick', (e) => {
           e.preventDefault();
           togglePlayback();
         });
         if (els.controls) {
-          els.controls.addEventListener('pointerenter', () => {
+          const controls = els.controls;
+          const enterControls = () => {
             lastInputWasKeyboard = false;
             showControls(false);
-          });
-          els.controls.addEventListener('pointerleave', () => {
+          };
+          const leaveControls = () => {
             lastInputWasKeyboard = false;
             scheduleControlsHide();
-          });
-          els.controls.addEventListener('pointerdown', () => {
-            lastInputWasKeyboard = false;
-          });
-          els.controls.addEventListener('focusin', () => showControls(false));
+          };
+          if (pointerEventsSupported) {
+            controls.addEventListener('pointerenter', enterControls);
+            controls.addEventListener('pointerleave', leaveControls);
+            controls.addEventListener('pointerdown', () => {
+              lastInputWasKeyboard = false;
+            });
+          } else {
+            controls.addEventListener('mouseenter', enterControls);
+            controls.addEventListener('mouseleave', leaveControls);
+            controls.addEventListener('mousedown', () => {
+              lastInputWasKeyboard = false;
+            });
+          }
+          controls.addEventListener('touchstart', enterControls, passiveTouch);
+          controls.addEventListener('touchend', leaveControls);
+          controls.addEventListener('touchcancel', leaveControls);
+          controls.addEventListener('focusin', () => showControls(false));
         }
         document.addEventListener('keydown', () => {
           lastInputWasKeyboard = true;
@@ -574,6 +656,11 @@
                   const shouldTick = state === 1 || state === 3 || (state === -1 && pendingPlay);
                   if (shouldTick) ensureTicker();
                   else stopTicker();
+                  if (state === 1 && !controlsPinnedVisible) {
+                    scheduleControlsHide(true);
+                  } else if (state === 0 || state === 2) {
+                    showControls(false);
+                  }
                   updateUi();
                 },
               }
@@ -646,7 +733,6 @@
         setupVisibilitySensors();
         setFullscreenUi(isFullscreenActive());
         showControls(false);
-        if (!controlsPinnedVisible) scheduleControlsHide(true);
         // Ikony domyślne zanim player zgłosi onReady
         els.play.innerHTML = iconPlay();
         els.mute.innerHTML = iconVol();
