@@ -130,10 +130,49 @@
     return roles;
   };
 
+  const hasActiveRole = (roles) => Array.isArray(roles) && (roles.includes('active') || roles.includes('admin'));
+
   const isActiveUser = (user) => {
-    const roles = getRoles(user);
-    return roles.includes('active') || roles.includes('admin');
+    if (hasActiveRole(getRoles(user))) return true;
+    return isStatusActive(statusValue(user));
   };
+
+  const rolesEqual = (a, b) => {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    for (let i = 0; i < sortedA.length; i++) {
+      if (sortedA[i] !== sortedB[i]) return false;
+    }
+    return true;
+  };
+
+  const sessionIdFrom = (source) => {
+    if (!source || !source.app_metadata) return '';
+    const sid = source.app_metadata.session_id;
+    return typeof sid === 'string' && sid ? sid : '';
+  };
+
+  const normalizeStatus = (value) => {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase();
+  };
+
+  const rawStatusValue = (source) => {
+    if (!source) return '';
+    const appMeta = source.app_metadata;
+    const userMeta = source.user_metadata;
+    if (appMeta && typeof appMeta.status === 'string' && appMeta.status.trim()) return appMeta.status;
+    if (userMeta && typeof userMeta.status === 'string' && userMeta.status.trim()) return userMeta.status;
+    return '';
+  };
+
+  const statusValue = (source) => normalizeStatus(rawStatusValue(source));
+
+  const ACTIVE_STATUS_VALUES = ['active', 'aktywny', 'approved', 'enabled', 'admin'];
+
+  const isStatusActive = (status) => ACTIVE_STATUS_VALUES.includes(status);
 
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -173,6 +212,24 @@
   };
   const clearLocalSessionId = () => { try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch {} };
 
+  const redirectToLoginWithParam = (key) => {
+    try {
+      const target = new URL(LOGIN_PATH, location.origin);
+      if (key) target.searchParams.set(key, '1');
+      location.replace(target.pathname + target.search);
+    } catch {
+      const fallback = key ? `${LOGIN_PATH}?${key}=1` : LOGIN_PATH;
+      location.replace(fallback);
+    }
+  };
+
+  const logoutAsInactive = async () => {
+    try { await ID.logout(); } catch {}
+    clearNFJwtCookie();
+    clearLocalSessionId();
+    redirectToLoginWithParam('inactive');
+  };
+
   const fetchServerUser = async (user) => {
     try {
       const token = await user.jwt();
@@ -187,27 +244,72 @@
     }
   };
 
+  const ensureFreshUserState = async (user, { enforceLogout = false } = {}) => {
+    if (!user) return { active: false, user: null, serverUser: null, serverRoles: [] };
+    const serverUser = await fetchServerUser(user);
+    const serverRoles = serverUser ? getRoles(serverUser) : null;
+
+    if (serverRoles && !rolesEqual(serverRoles, getRoles(user))) {
+      const appMeta = Object.assign({}, user.app_metadata || {});
+      appMeta.roles = serverRoles;
+      user.app_metadata = appMeta;
+    }
+
+    const serverStatusRaw = rawStatusValue(serverUser);
+    if (serverStatusRaw) {
+      const appMeta = Object.assign({}, user.app_metadata || {});
+      if (appMeta.status !== serverStatusRaw) {
+        appMeta.status = serverStatusRaw;
+        user.app_metadata = appMeta;
+      }
+    }
+
+    const active = serverRoles ? hasActiveRole(serverRoles) || isStatusActive(normalizeStatus(serverStatusRaw)) : isActiveUser(user);
+    if (!active) {
+      if (enforceLogout) await logoutAsInactive();
+      return { active: false, user: null, serverUser, serverRoles: serverRoles || [] };
+    }
+
+    return { active: true, user, serverUser, serverRoles: serverRoles || getRoles(user) };
+  };
+
+  const handleSessionMismatch = async () => {
+    try { await ID.logout(); } catch {}
+    clearNFJwtCookie();
+    clearLocalSessionId();
+    await delay(50);
+    redirectToLoginWithParam('loggedout');
+  };
+
   const ensureAuthenticatedOrRedirect = async () => {
-    const user = getUser();
+    let user = getUser();
     if (!user) {
-      // Not logged in → go to login
-      location.replace(LOGIN_PATH);
+      redirectToLoginWithParam();
       return false;
     }
-    // Keep nf_jwt aligned on each page load
+
+    const state = await ensureFreshUserState(user, { enforceLogout: true });
+    if (!state.active) return false;
+
+    const serverUser = state.serverUser;
+    const serverSid = sessionIdFrom(serverUser);
+    const localSid = localSessionId();
+
+    if (serverSid && localSid && serverSid !== localSid) {
+      await handleSessionMismatch();
+      return false;
+    }
+
+    user = getUser() || user;
+
+    if (serverSid && !localSid) {
+      saveLocalSessionId(serverSid);
+    } else if (!serverSid) {
+      const sid = sessionIdFrom(user);
+      if (sid && !localSid) saveLocalSessionId(sid);
+    }
+
     await setNFJwtCookie(user);
-
-    // Update local session id from current user if present (after fresh login)
-    const sid = user.app_metadata && user.app_metadata.session_id;
-    if (sid) saveLocalSessionId(sid);
-
-    if (!isActiveUser(user)) {
-      try { await ID.logout(); } catch {}
-      clearNFJwtCookie();
-      clearLocalSessionId();
-      location.replace(LOGIN_PATH + '?inactive=1');
-      return false;
-    }
     return true;
   };
 
@@ -215,19 +317,17 @@
     const user = getUser();
     if (!user) return { ok: false, reason: 'no_user' };
     try {
-      const serverUser = await fetchServerUser(user);
+      const state = await ensureFreshUserState(user, { enforceLogout: true });
+      if (!state.active) return { ok: false, reason: 'inactive' };
+      const serverUser = state.serverUser;
       if (!serverUser) return { ok: true };
-      const serverSid = serverUser.app_metadata && serverUser.app_metadata.session_id;
+      const serverSid = sessionIdFrom(serverUser);
       const localSid = localSessionId();
       if (serverSid && localSid && serverSid !== localSid) {
-        // Session moved elsewhere → sign out here.
-        try { await ID.logout(); } catch {}
-        clearNFJwtCookie();
-        clearLocalSessionId();
-        await delay(50);
-        location.replace(LOGIN_PATH);
+        await handleSessionMismatch();
         return { ok: false, reason: 'session_mismatch' };
       }
+      if (serverSid && !localSid) saveLocalSessionId(serverSid);
     } catch {}
     return { ok: true };
   };
@@ -256,11 +356,22 @@
 
     // If already logged and active, jump to members (unless handling a special flow)
     const user = getUser();
-    if (!identityFlowInQuery && user && isActiveUser(user)) {
-      await setNFJwtCookie(user);
-      const sid = user.app_metadata && user.app_metadata.session_id;
-      if (sid) saveLocalSessionId(sid);
-      location.replace(MEMBERS_PATH);
+    if (!identityFlowInQuery && user) {
+      const state = await ensureFreshUserState(user, { enforceLogout: true });
+      if (state.active) {
+        let current = getUser() || user;
+        const serverSid = sessionIdFrom(state.serverUser);
+        if (serverSid) {
+          saveLocalSessionId(serverSid);
+        } else {
+          const sid = sessionIdFrom(current);
+          if (sid) saveLocalSessionId(sid);
+        }
+        await setNFJwtCookie(current);
+        location.replace(MEMBERS_PATH);
+      } else {
+        return;
+      }
     }
 
     // Show informational messages based on query params
@@ -285,18 +396,34 @@
     // Keep nf_jwt fresh whenever Identity initializes or refreshes
     try {
       ID.on('init', async (user) => {
-        if (user) {
-          await setNFJwtCookie(user);
-          const sid = user.app_metadata && user.app_metadata.session_id;
-          if (sid) saveLocalSessionId(sid);
+        if (!user) return;
+        const state = await ensureFreshUserState(user, { enforceLogout: true });
+        if (!state.active) return;
+        let current = getUser() || user;
+        const serverSid = sessionIdFrom(state.serverUser);
+        const localSid = localSessionId();
+        if (serverSid && !localSid) {
+          saveLocalSessionId(serverSid);
+        } else if (!serverSid) {
+          const sid = sessionIdFrom(current);
+          if (sid && !localSid) saveLocalSessionId(sid);
         }
+        await setNFJwtCookie(current);
       });
     } catch {}
     try {
       ID.on('login', async (user) => {
-        await setNFJwtCookie(user);
-        const sid = user.app_metadata && user.app_metadata.session_id;
-        if (sid) saveLocalSessionId(sid);
+        const state = await ensureFreshUserState(user, { enforceLogout: true });
+        if (!state.active) return;
+        let current = getUser() || user;
+        const serverSid = sessionIdFrom(state.serverUser);
+        if (serverSid) {
+          saveLocalSessionId(serverSid);
+        } else {
+          const sid = sessionIdFrom(current);
+          if (sid) saveLocalSessionId(sid);
+        }
+        await setNFJwtCookie(current);
       });
     } catch {}
     try {
@@ -326,9 +453,27 @@
     } else if (isLoginPage()) {
       onLoginPageInit();
     } else {
-      // On public pages, keep nf_jwt aligned if user is logged in
       const user = getUser();
-      if (user) await setNFJwtCookie(user);
+      if (user) {
+        const state = await ensureFreshUserState(user, { enforceLogout: true });
+        if (!state.active) return;
+        const serverUser = state.serverUser;
+        let current = getUser() || user;
+        const serverSid = sessionIdFrom(serverUser);
+        const localSid = localSessionId();
+        if (serverSid && localSid && serverSid !== localSid) {
+          await handleSessionMismatch();
+          return;
+        }
+        if (serverSid && !localSid) {
+          saveLocalSessionId(serverSid);
+        } else if (!serverSid) {
+          const sid = sessionIdFrom(current);
+          if (sid && !localSid) saveLocalSessionId(sid);
+        }
+        current = getUser() || current;
+        await setNFJwtCookie(current);
+      }
     }
   });
 })();
