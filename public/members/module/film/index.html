@@ -100,8 +100,8 @@
 
       const clearQueryFromUrl = () => {
         if (!window.location.search) return;
-        const { origin, pathname, hash } = window.location;
-        const cleanUrl = origin + pathname + (hash || '');
+        const { origin, hash } = window.location;
+        const cleanUrl = origin + (hash || '');
         history.replaceState(null, '', cleanUrl);
       };
 
