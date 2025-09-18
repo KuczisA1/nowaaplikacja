@@ -3,373 +3,209 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="referrer" content="no-referrer" />
+    <title>Video.js YouTube Player</title>
     <meta name="x-members" content="1" />
     <meta http-equiv="Cache-Control" content="no-store" />
-    <title>Odtwarzacz filmu</title>
-    <style id="anti-flash">html{visibility:hidden}</style>
-    <link rel="stylesheet" href="https://unpkg.com/video.js@8/dist/video-js.min.css" />
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     <script defer src="/assets/js/auth.js"></script>
-    <script src="https://unpkg.com/video.js@8/dist/video.min.js" defer></script>
-    <script src="https://unpkg.com/videojs-youtube@3/dist/Youtube.min.js" defer></script>
+
+    <!-- Video.js CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/video.js@8/dist/video-js.min.css" rel="stylesheet" />
+
     <style>
-      :root { color-scheme: dark; }
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body { height: 100%; margin: 0; background: #0b0d10; color: #e6e8eb; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-      body { display: flex; flex-direction: column; overflow: hidden; }
-      #app { flex: 1 1 auto; display: grid; grid-template-rows: 1fr; }
-      .stage { position: relative; background: #000; display: flex; flex-direction: column; height: 100%; }
-      .empty { flex: 1 1 auto; display: grid; place-items: center; text-align: center; padding: 32px; color: #c7cbd1; }
-      .empty strong { display: block; margin-bottom: 10px; font-size: 1.1rem; color: #fff; }
-      .player-wrap { position: relative; flex: 1 1 auto; display: flex; width: 100%; height: 100%; }
-      .video-js { flex: 1 1 auto; width: 100%; height: 100%; font-size: 16px; background-color: #000; }
-      .video-js .vjs-tech { object-fit: contain; }
-      .vjs-big-play-button { border: none; }
-      .plain-embed { width: 100%; height: 100%; border: 0; display: block; background: #000; }
-      #message { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; background: rgba(0,0,0,0.55); color: #fff; text-align: center; z-index: 30; pointer-events: none; opacity: 0; transition: opacity 220ms ease; font-size: 0.95rem; }
-      #message.show { opacity: 1; }
-      .overlay-block, .overlay-logo { position: absolute; pointer-events: auto; z-index: 25; display: none; }
-      .overlay-block::before, .overlay-logo::before { content: ""; position: absolute; inset: 0; }
-      .overlay-block { top: 0; right: 0; width: clamp(140px, 22vw, 300px); height: clamp(80px, 16vh, 200px); }
-      .overlay-block::before { background: radial-gradient(120px 120px at 80% 20%, rgba(0,0,0,0.7), rgba(0,0,0,0.3) 60%, transparent 100%); }
-      .overlay-logo { bottom: 0; right: 0; width: clamp(120px, 24vw, 260px); height: clamp(60px, 16vh, 160px); }
-      .overlay-logo::before { background: radial-gradient(130px 130px at 75% 75%, rgba(0,0,0,0.75), rgba(0,0,0,0.35) 55%, transparent 100%); }
-      body[data-mode="plain"] #player { display: none !important; }
-      body[data-mode="plain"] .vjs-control-bar,
-      body[data-mode="plain"] .vjs-big-play-button { display: none !important; }
-      body[data-native-fs="1"] #message { display: none; }
-      body[data-mode="plain"] #message { display: none; }
+      html, body { height: 100%; }
+      body { margin: 0; background: #000; overflow: hidden; }
+
+      /* Kontener trzymający player zawsze w obrębie okna */
+      #wrap {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #000;
+      }
+
+      /* Skaluje player do maksymalnego rozmiaru bez wychodzenia poza ekran */
+      .player-shell {
+        position: relative;
+        width: min(100vw, calc(100vh * 16 / 9));
+        height: min(100vh, calc(100vw * 9 / 16));
+      }
+
+      /* Maska na górę playera, by przykryć przyciski YT */
+      .player-shell::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 88px;
+        z-index: 5;
+        pointer-events: auto;
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
+      }
+
+      .player-shell .video-js,
+      .player-shell iframe {
+        width: 100%;
+        height: 100%;
+      }
+
+      .player-shell iframe {
+        border: 0;
+      }
+
+      .player-shell .video-js .vjs-tech {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Prosty overlay, gdy brak ?id= */
+      .overlay {
+        position: fixed; inset: 0;
+        display: grid; place-items: center;
+        color: #bbb; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        text-align: center; padding: 1rem;
+      }
+      .overlay strong { color: #fff; }
+      .hidden { display: none !important; }
     </style>
-    <script>
-      (function earlyStrip(){
-        try {
-          const sp = new URLSearchParams(location.search);
-          const keep = (sp.get('keep')||'') === '1';
-          const id = (sp.get('id')||'').trim();
-          const typeParam = (sp.get('type')||'').trim();
-          if (id) { try { sessionStorage.setItem('yt_id', id); } catch {} }
-          if (typeParam) {
-            const safeType = typeParam === '2' ? '2' : '1';
-            try { sessionStorage.setItem('yt_type', safeType); } catch {}
-          }
-          if (id && !keep) {
-            const basePath = location.pathname.replace(/[^\\/]*$/, '');
-            history.replaceState(null, '', basePath || '/');
-          }
-        } catch {}
-        try { document.documentElement.style.visibility = 'visible'; } catch {}
-      })();
-    </script>
   </head>
   <body>
-    <div id="app">
-      <div class="stage" id="stage">
-        <div id="message"></div>
-        <div class="empty" id="empty">
-          <div>
-            <strong>Podaj ID filmu YouTube w URL</strong>
-            <div>Użycie: <code>?id=dQw4w9WgXcQ&amp;type=1</code> albo <code>?id=dQw4w9WgXcQ&amp;type=2</code></div>
-          </div>
-        </div>
-        <div class="player-wrap" id="playerWrap">
-          <video id="player" class="video-js vjs-default-skin vjs-big-play-centered" playsinline controls preload="auto"></video>
-          <iframe id="plain" class="plain-embed" hidden
-            referrerpolicy="no-referrer"
-            allow="autoplay; picture-in-picture; fullscreen"
-            allowfullscreen
-            sandbox="allow-scripts allow-same-origin allow-presentation"></iframe>
-          <div id="shareBlock" class="overlay-block" hidden title="Zablokowana strefa udostępniania"></div>
-          <div id="logoBlock" class="overlay-logo" hidden title="Zablokowany obszar logo"></div>
-        </div>
+    <div id="wrap">
+      <div id="playerHost" class="player-shell"></div>
+    </div>
+
+    <!-- Overlay z informacją, jeśli brak parametru id -->
+    <div id="hint" class="overlay hidden">
+      <div>
+        Podaj identyfikator filmu YouTube w adresie URL, np.<br/>
+        <strong>http://localhost:1234/?id=dQw4w9WgXcQ</strong>
       </div>
     </div>
 
+    <!-- Video.js core -->
+    <script src="https://cdn.jsdelivr.net/npm/video.js@8/dist/video.min.js"></script>
+    <!-- Wtyczka do YouTube -->
+    <script src="https://cdn.jsdelivr.net/npm/videojs-youtube@3/dist/Youtube.min.js"></script>
+
     <script>
-      const $ = (selector) => document.querySelector(selector);
-      const STORAGE_KEYS = { volume: 'chem.videojs.volume', muted: 'chem.videojs.muted' };
-      const SESSION_KEYS = { id: 'yt_id', type: 'yt_type' };
-      let playerInstance = null;
+      const SANDBOX_VALUE = 'allow-scripts allow-same-origin allow-presentation';
 
-      const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
-      const saveLocal = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
-      const readLocal = (key) => { try { const raw = localStorage.getItem(key); return raw === null ? null : raw; } catch { return null; } };
-      const saveSession = (key, value) => { try { sessionStorage.setItem(key, value); } catch {} };
-      const readSession = (key) => { try { return sessionStorage.getItem(key) || ''; } catch { return ''; } };
-      const stripUrlToHostOnly = () => {
-        try {
-          const target = location.origin + '/';
-          if (location.href !== target) history.replaceState({}, '', target);
-        } catch {}
+      const hint = document.getElementById('hint');
+      const host = document.getElementById('playerHost');
+
+      let player = null;
+      let sandboxObserver = null;
+
+      const clearQueryFromUrl = () => {
+        if (!window.location.search) return;
+        const { origin, pathname, hash } = window.location;
+        const cleanUrl = origin + pathname + (hash || '');
+        history.replaceState(null, '', cleanUrl);
       };
 
-      const loadVolume = () => {
-        const raw = readLocal(STORAGE_KEYS.volume);
-        if (raw === null) return null;
-        const num = Number(raw);
-        return Number.isFinite(num) ? clamp(num, 0, 100) / 100 : null;
-      };
-      const loadMuted = () => {
-        const raw = readLocal(STORAGE_KEYS.muted);
-        if (raw === '1') return true;
-        if (raw === '0') return false;
-        return null;
-      };
-
-      const showMessage = (text, duration = 1600) => {
-        const box = $('#message');
-        if (!box) return;
-        box.textContent = text || '';
-        if (text) {
-          box.classList.add('show');
-          if (duration > 0) {
-            window.setTimeout(() => box.classList.remove('show'), duration);
-          }
-        } else {
-          box.classList.remove('show');
+      const ensureVideoJsSandbox = () => {
+        if (!player) return;
+        const iframe = player.el().querySelector('iframe');
+        if (iframe && iframe.getAttribute('sandbox') !== SANDBOX_VALUE) {
+          iframe.setAttribute('sandbox', SANDBOX_VALUE);
+          iframe.setAttribute('allowfullscreen', '');
         }
       };
 
-      const showEmpty = (html) => {
-        const empty = $('#empty');
-        if (!empty) return;
-        if (html) empty.innerHTML = html;
-        empty.hidden = false;
-      };
-      const hideEmpty = () => {
-        const empty = $('#empty');
-        if (empty) empty.hidden = true;
-      };
-
-      const showOverlays = () => {
-        const share = $('#shareBlock');
-        const logo = $('#logoBlock');
-        if (share) share.hidden = false;
-        if (logo) logo.hidden = false;
-      };
-      const hideOverlays = () => {
-        const share = $('#shareBlock');
-        const logo = $('#logoBlock');
-        if (share) share.hidden = true;
-        if (logo) logo.hidden = true;
+      const destroyCurrentPlayer = () => {
+        if (sandboxObserver) {
+          sandboxObserver.disconnect();
+          sandboxObserver = null;
+        }
+        if (player) {
+          player.dispose();
+          player = null;
+        }
+        host.innerHTML = '';
       };
 
-      const makePlainEmbedUrl = (id) => {
-        const params = new URLSearchParams({
-          controls: '1',
-          modestbranding: '1',
-          rel: '0',
-          playsinline: '1',
-          iv_load_policy: '3',
-          fs: '1',
-          origin: location.origin,
+      const createVideoJsPlayer = (videoId) => {
+        const video = document.createElement('video');
+        video.id = 'vid1';
+        video.className = 'video-js vjs-default-skin vjs-big-play-centered';
+        video.setAttribute('controls', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('autoplay', '');
+        video.setAttribute('muted', '');
+        host.appendChild(video);
+
+        player = videojs(video, {
+          techOrder: ['youtube'],
+          responsive: true,
+          controlBar: {
+            volumePanel: { inline: false }
+          },
+          youtube: {
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1
+          },
+          sources: [{
+            type: 'video/youtube',
+            src: `https://www.youtube.com/watch?v=${videoId}`
+          }]
         });
-        return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params.toString()}`;
-      };
 
-      const waitForVideoJs = () => new Promise((resolve, reject) => {
-        let tries = 0;
-        const check = () => {
-          tries += 1;
-          if (window.videojs && window.videojs.Youtube) {
-            resolve(window.videojs);
-            return;
-          }
-          if (tries > 150) {
-            reject(new Error('Nie udało się załadować Video.js'));
-            return;
-          }
-          window.setTimeout(check, 100);
-        };
-        check();
-      });
+        sandboxObserver = new MutationObserver(ensureVideoJsSandbox);
 
-      const initPlainEmbed = (id) => {
-        document.body.dataset.mode = 'plain';
-        hideEmpty();
-        const iframe = $('#plain');
-        const video = $('#player');
-        if (playerInstance) {
-          try { playerInstance.dispose(); } catch {}
-          playerInstance = null;
-        }
-        if (video) {
-          video.pause?.();
-          video.setAttribute('hidden', '');
-        }
-        if (!iframe) return;
-        iframe.hidden = false;
-        iframe.src = makePlainEmbedUrl(id);
-        showOverlays();
-      };
+        player.ready(() => {
+          ensureVideoJsSandbox();
+          sandboxObserver.observe(player.el(), { childList: true, subtree: true });
+          player.on('loadstart', ensureVideoJsSandbox);
+        });
 
-      const initVideoJs = (id) => {
-        document.body.dataset.mode = 'player';
-        hideEmpty();
-        const videoEl = $('#player');
-        const iframe = $('#plain');
-        if (!videoEl) {
-          showEmpty('<div><strong>Brak elementu odtwarzacza.</strong></div>');
-          return;
-        }
-        if (iframe) {
-          iframe.hidden = true;
-          iframe.removeAttribute('src');
-        }
-        if (playerInstance) {
-          try { playerInstance.dispose(); } catch {}
-          playerInstance = null;
-        }
-        videoEl.removeAttribute('hidden');
-        const poster = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
-        videoEl.setAttribute('poster', poster);
-
-        waitForVideoJs().then((videojs) => {
-          const options = {
-            controls: true,
-            autoplay: false,
-            preload: 'auto',
-            poster,
-            responsive: true,
-            fill: true,
-            techOrder: ['youtube'],
-            sources: [{ type: 'video/youtube', src: `https://www.youtube.com/watch?v=${encodeURIComponent(id)}` }],
-            youtube: {
-              ytControls: 0,
-              modestbranding: 1,
-              rel: 0,
-              playsinline: 1,
-              ivLoadPolicy: 3,
-              enablePrivacyEnhancedMode: true,
-            },
-          };
-
-          const player = videojs(videoEl, options, function onReady() {
-            const savedMuted = loadMuted();
-            const savedVolume = loadVolume();
-            if (savedMuted !== null) this.muted(savedMuted);
-            if (savedVolume !== null) this.volume(savedVolume);
-            this.fluid(true);
-            this.fill(true);
-            showMessage('Odtwarzacz gotowy');
-          });
-
-          playerInstance = player;
-          showOverlays();
-
-          player.on('volumechange', () => {
-            try {
-              const vol = Math.round(player.volume() * 100);
-              saveLocal(STORAGE_KEYS.volume, String(clamp(vol, 0, 100)));
-              saveLocal(STORAGE_KEYS.muted, player.muted() ? '1' : '0');
-            } catch {}
-          });
-
-          player.on('error', () => {
-            const err = player.error();
-            const msg = err && err.message ? err.message : 'Nieznany błąd odtwarzacza.';
-            showMessage(msg, 4000);
-          });
-
-          player.on('ended', () => {
-            showMessage('Koniec odtwarzania');
-          });
-
-          const adjustVolumeBy = (delta) => {
-            const current = player.muted() ? 0 : player.volume();
-            const next = clamp(current + delta, 0, 1);
-            player.muted(next <= 0);
-            player.volume(next);
-            showMessage(`Głośność: ${Math.round(player.volume() * 100)}%`);
-          };
-
-          const seekBySeconds = (seconds) => {
-            if (player.scrubbing && player.scrubbing()) return;
-            const duration = player.duration();
-            if (!Number.isFinite(duration)) {
-              showMessage('Przewijanie niedostępne dla transmisji na żywo');
-              return;
-            }
-            const next = clamp(player.currentTime() + seconds, 0, duration);
-            player.currentTime(next);
-            showMessage(`Pozycja: ${Math.floor(next)}s`);
-          };
-
-          const handleKey = (event) => {
-            if (!player || player.ended()) return;
-            const tag = (event.target && event.target.tagName || '').toLowerCase();
-            if (tag === 'input' || tag === 'textarea') return;
-            if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-            switch (event.key) {
-              case ' ':
-              case 'Spacebar':
-              case 'k':
-              case 'K':
-                event.preventDefault();
-                if (player.paused()) player.play(); else player.pause();
-                break;
-              case 'ArrowLeft':
-                event.preventDefault();
-                seekBySeconds(-5);
-                break;
-              case 'ArrowRight':
-                event.preventDefault();
-                seekBySeconds(5);
-                break;
-              case 'ArrowUp':
-                event.preventDefault();
-                adjustVolumeBy(0.05);
-                break;
-              case 'ArrowDown':
-                event.preventDefault();
-                adjustVolumeBy(-0.05);
-                break;
-              case 'f':
-              case 'F':
-                event.preventDefault();
-                if (player.isFullscreen()) player.exitFullscreen();
-                else player.requestFullscreen();
-                break;
-              default:
-                break;
-            }
-          };
-
-          document.addEventListener('keydown', handleKey);
-          player.on('dispose', () => document.removeEventListener('keydown', handleKey));
-
-          player.on('fullscreenchange', () => {
-            const isFs = player.isFullscreen();
-            document.body.dataset.nativeFs = isFs ? '1' : '0';
-            if (!isFs) showOverlays();
-          });
-        }).catch((err) => {
-          showOverlays();
-          showEmpty(`<div><strong>Błąd inicjalizacji.</strong><div>${err.message || err}</div></div>`);
+        player.on('dispose', () => {
+          sandboxObserver?.disconnect();
+          sandboxObserver = null;
         });
       };
 
-      document.addEventListener('DOMContentLoaded', () => {
-        const params = new URLSearchParams(location.search);
-        const id = (params.get('id') || readSession(SESSION_KEYS.id) || '').trim();
-        const typeParam = (params.get('type') || readSession(SESSION_KEYS.type) || '').trim();
-        const type = typeParam === '2' ? '2' : '1';
+      const createEmbedPlayer = (videoId) => {
+        const iframe = document.createElement('iframe');
+        iframe.className = 'yt-embed';
+        iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1`;
+        iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
+        iframe.setAttribute('sandbox', SANDBOX_VALUE);
+        iframe.setAttribute('allowfullscreen', '');
+        host.appendChild(iframe);
+      };
 
-        if (!id) {
-          showEmpty('<div><strong>Brak parametru ID filmu.</strong><div>Dodaj ?id=&lt;YouTubeID&gt; do adresu.</div></div>');
-          hideOverlays();
-          return;
-        }
+      const applyStateFromUrl = () => {
+        const url = new URL(window.location.href);
+        const videoId = url.searchParams.get('id');
+        const type = url.searchParams.get('type') || '1';
 
-        saveSession(SESSION_KEYS.id, id);
-        saveSession(SESSION_KEYS.type, type);
-        stripUrlToHostOnly();
+        destroyCurrentPlayer();
 
-        if (type === '2') {
-          initPlainEmbed(id);
+        if (videoId) {
+          hint.classList.add('hidden');
+
+          if (type === '2') {
+            createEmbedPlayer(videoId);
+          } else {
+            createVideoJsPlayer(videoId);
+          }
+
+          clearQueryFromUrl();
         } else {
-          initVideoJs(id);
+          hint.classList.remove('hidden');
+        }
+      };
+
+      applyStateFromUrl();
+
+      window.addEventListener('popstate', applyStateFromUrl);
+
+      window.addEventListener('resize', () => {
+        if (player) {
+          player.resize();
         }
       });
     </script>
