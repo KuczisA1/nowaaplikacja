@@ -98,9 +98,20 @@
       let player = null;
       let sandboxObserver = null;
 
-      document.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-      });
+      const applySandboxToIframe = (iframe) => {
+        if (!iframe) return;
+        iframe.setAttribute('sandbox', SANDBOX_VALUE);
+        iframe.setAttribute('allowfullscreen', '');
+      };
+
+      const suppressContextMenu = (target) => {
+        target.addEventListener('contextmenu', (event) => {
+          event.preventDefault();
+        });
+      };
+
+      suppressContextMenu(document);
+      suppressContextMenu(host);
 
       const clearQueryFromUrl = () => {
         if (!window.location.search) return;
@@ -112,10 +123,7 @@
       const ensureVideoJsSandbox = () => {
         if (!player) return;
         const iframe = player.el().querySelector('iframe');
-        if (iframe && iframe.getAttribute('sandbox') !== SANDBOX_VALUE) {
-          iframe.setAttribute('sandbox', SANDBOX_VALUE);
-          iframe.setAttribute('allowfullscreen', '');
-        }
+        applySandboxToIframe(iframe);
       };
 
       const destroyCurrentPlayer = () => {
@@ -176,8 +184,7 @@
         iframe.className = 'yt-embed';
         iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1`;
         iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
-        iframe.setAttribute('sandbox', SANDBOX_VALUE);
-        iframe.setAttribute('allowfullscreen', '');
+        applySandboxToIframe(iframe);
         host.appendChild(iframe);
       };
 
