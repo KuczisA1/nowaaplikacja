@@ -102,12 +102,36 @@
         if (!iframe) return;
         iframe.setAttribute('sandbox', SANDBOX_VALUE);
         iframe.setAttribute('allowfullscreen', '');
+        if (!iframe.dataset.contextMenuBlocked) {
+          iframe.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+          });
+          iframe.dataset.contextMenuBlocked = '1';
+        }
+      };
+
+      const ensureHostIframesSandboxed = () => {
+        host.querySelectorAll('iframe').forEach(applySandboxToIframe);
+      };
+
+      const watchHostForSandboxableIframes = () => {
+        if (sandboxObserver) return;
+        sandboxObserver = new MutationObserver(() => {
+          ensureHostIframesSandboxed();
+        });
+        sandboxObserver.observe(host, { childList: true, subtree: true });
       };
 
       const suppressContextMenu = (target) => {
-        target.addEventListener('contextmenu', (event) => {
-          event.preventDefault();
-        });
+        target.addEventListener(
+          'contextmenu',
+          (event) => {
+            if (target === document || typeof target.contains !== 'function' || target.contains(event.target)) {
+              event.preventDefault();
+            }
+          },
+          { capture: true }
+        );
       };
 
       suppressContextMenu(document);
@@ -118,12 +142,6 @@
         const { origin, hash } = window.location;
         const cleanUrl = origin + (hash || '');
         history.replaceState(null, '', cleanUrl);
-      };
-
-      const ensureVideoJsSandbox = () => {
-        if (!player) return;
-        const iframe = player.el().querySelector('iframe');
-        applySandboxToIframe(iframe);
       };
 
       const destroyCurrentPlayer = () => {
@@ -165,17 +183,9 @@
           }]
         });
 
-        sandboxObserver = new MutationObserver(ensureVideoJsSandbox);
-
         player.ready(() => {
-          ensureVideoJsSandbox();
-          sandboxObserver.observe(player.el(), { childList: true, subtree: true });
-          player.on('loadstart', ensureVideoJsSandbox);
-        });
-
-        player.on('dispose', () => {
-          sandboxObserver?.disconnect();
-          sandboxObserver = null;
+          ensureHostIframesSandboxed();
+          watchHostForSandboxableIframes();
         });
       };
 
@@ -186,6 +196,8 @@
         iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
         applySandboxToIframe(iframe);
         host.appendChild(iframe);
+        ensureHostIframesSandboxed();
+        watchHostForSandboxableIframes();
       };
 
       const applyStateFromUrl = () => {
