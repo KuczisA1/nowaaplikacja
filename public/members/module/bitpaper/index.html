@@ -136,6 +136,7 @@
       <input type="file" id="importFile" accept="application/json" hidden />
       <button class="btn icon" id="btnLoad" title="Wczytaj planszę (JSON)">📁</button>
       <button class="btn icon" id="btnPng" title="Eksport PNG">🖼️</button>
+      <button class="btn icon" id="btnDelete" title="Usuń zaznaczenie">X</button>
       <button class="btn icon" id="btnClear" title="Wyczyść planszę">🧹</button>
       <button class="btn icon" id="hideToolbar" title="Ukryj pasek">⬆️</button>
     </div>
@@ -292,6 +293,7 @@
   const btnSave = document.getElementById('btnSave');
   const btnLoad = document.getElementById('btnLoad');
   const btnPng  = document.getElementById('btnPng');
+  const btnDelete = document.getElementById('btnDelete');
   const btnClear= document.getElementById('btnClear');
   const importFile = document.getElementById('importFile');
 
@@ -317,6 +319,9 @@
     oc.fillStyle = '#ffffff'; oc.fillRect(0,0,w,h);
     drawTo(oc,w,h);
     const a = document.createElement('a'); a.href = off.toDataURL('image/png'); a.download = `tablica-${Date.now()}.png`; a.click();
+  });
+  btnDelete.addEventListener('click', ()=>{
+    deleteSelection();
   });
   btnClear.addEventListener('click', ()=>{
     if(confirm('Wyczyścić całą planszę?')){
@@ -580,6 +585,18 @@
       const o=state.objects[i]; const ob=objectBounds(o); if(!ob) continue;
       if(rectsIntersect(r, ob)) state.selectionSet.add(i);
     }
+  }
+
+  // Usuwa zaznaczone elementy — używane przez Delete/Backspace oraz przycisk X.
+  function deleteSelection(){
+    if(state.editor) return false;
+    if(!state.selectionSet.size) return false;
+    pushHistory();
+    state.objects = state.objects.filter((_,i)=>!state.selectionSet.has(i));
+    clearSelection();
+    closeEditor();
+    draw();
+    return true;
   }
 
   /* ========= TRANSFORM SNAPSHOTS ========= */
@@ -903,7 +920,7 @@
       if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
       if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); }
       if(e.key==='Delete' || e.key==='Backspace'){
-        if(state.selectionSet.size){ pushHistory(); state.objects = state.objects.filter((_,i)=>!state.selectionSet.has(i)); clearSelection(); draw(); }
+        if(deleteSelection()) e.preventDefault();
       }
     }
   });

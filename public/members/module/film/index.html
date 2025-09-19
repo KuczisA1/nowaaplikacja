@@ -90,13 +90,17 @@
     <script src="https://cdn.jsdelivr.net/npm/videojs-youtube@3/dist/Youtube.min.js"></script>
 
     <script>
-      const SANDBOX_VALUE = 'allow-scripts allow-same-origin allow-presentation';
+      const SANDBOX_VALUE = 'allow-scripts allow-same-origin';
 
       const hint = document.getElementById('hint');
       const host = document.getElementById('playerHost');
 
       let player = null;
       let sandboxObserver = null;
+
+      document.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+      });
 
       const clearQueryFromUrl = () => {
         if (!window.location.search) return;
