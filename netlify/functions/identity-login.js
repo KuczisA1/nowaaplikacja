@@ -40,11 +40,8 @@ exports.handler = async (event) => {
     const updatedRoles = Array.from(new Set(normalizedRoles));
     const isAdmin = updatedRoles.includes('admin');
     const isActiveByStatus = isAdmin || ACTIVE_STATUS_VALUES.has(statusNormalized);
-    const activeIndex = updatedRoles.indexOf('active');
-    if (isActiveByStatus) {
-      if (!updatedRoles.includes('active')) updatedRoles.push('active');
-    } else if (activeIndex !== -1) {
-      updatedRoles.splice(activeIndex, 1);
+    if (isActiveByStatus && !updatedRoles.includes('active')) {
+      updatedRoles.push('active');
     }
 
     // Generate a new session id for this login (forces other devices out on next refresh).
