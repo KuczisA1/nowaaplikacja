@@ -31,7 +31,6 @@ const API = {
     cancelFileBtn: $('#cancel-file-btn'),
     filePreview: $('.file-preview'),
     suggestions: $('.suggestions'),
-    maturaTemplate: $('#matura-system-prompt'),
   };
 
   function prefersDark(){
@@ -46,8 +45,19 @@ const API = {
     return prefersDark() ? 'dark' : 'light';
   }
 
+  function loadStoredMaturaPreference(){
+    try {
+      return localStorage.getItem('chem.matura') === '1';
+    } catch {
+      return false;
+    }
+  }
+
   const state = {
-    matura: localStorage.getItem('chem.matura') === '1',
+    matura: false,
+    maturaAvailable: false,
+    maturaStoredPreference: loadStoredMaturaPreference(),
+    maturaPrompt: '',
     busy: false,
     aborter: null,
     messages: [],
@@ -79,7 +89,8 @@ const API = {
 
   function bootstrap(){
     applyTheme(state.theme, false);
-    setMatura(state.matura);
+    updateMaturaButton();
+    initMaturaPrompt();
 
     on(els.suggestions, 'click', (e) => {
       const item = e.target.closest('.suggestions-item'); if (!item) return;
@@ -88,7 +99,7 @@ const API = {
       els.promptInput.focus();
     });
 
-    on(els.modeMaturaBtn,'click',()=>setMatura(!state.matura));
+    on(els.modeMaturaBtn,'click',()=>{ if(!state.maturaAvailable) return; setMatura(!state.matura); });
     on(els.promptForm,'submit',handlePromptSubmit);
     on(els.sendBtn,'click',(e)=>{ e.preventDefault(); els.promptForm.requestSubmit(); });
     on(els.stopBtn,'click',stopGeneration);
@@ -106,11 +117,122 @@ const API = {
     els.promptInput?.focus();
   }
 
-  // ---------- Matura toggle ----------
-  function setMatura(onOff){
-    state.matura = onOff; localStorage.setItem('chem.matura', onOff?'1':'0');
-    els.modeMaturaBtn.classList.toggle('selected', onOff);
-    els.modeMaturaBtn.setAttribute('aria-pressed', onOff?'true':'false');
+  // ---------- Matura prompt & toggle ----------
+  async function initMaturaPrompt(){
+    const raw = getPromptSourceFromUrl();
+    if (!raw) {
+      disableMaturaMode();
+      return;
+    }
+
+    const sanitized = sanitizePromptPath(raw);
+    if (!sanitized) {
+      disableMaturaMode();
+      return;
+    }
+
+    try {
+      const promptText = await fetchPromptText(sanitized);
+      enableMaturaMode(promptText);
+    } catch (err) {
+      console.error('Nie udało się wczytać promptu trybu maturzysty', err);
+      disableMaturaMode();
+    }
+  }
+
+  function getPromptSourceFromUrl(){
+    try {
+      const url = new URL(window.location.href);
+      const value = url.searchParams.get('prompt');
+      return value ? value.trim() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function sanitizePromptPath(raw){
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return '';
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) || trimmed.startsWith('//')) return '';
+    if (trimmed.includes('..') || trimmed.includes('\\')) return '';
+    return trimmed;
+  }
+
+  async function fetchPromptText(path){
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const rawText = await response.text();
+    let promptText = rawText;
+    try {
+      const parsed = JSON.parse(rawText);
+      promptText = extractPromptText(parsed) || '';
+    } catch {
+      promptText = rawText;
+    }
+
+    if (!promptText.trim()) {
+      throw new Error('Pusty prompt');
+    }
+
+    return promptText.trim();
+  }
+
+  function extractPromptText(data){
+    if (typeof data === 'string') return data;
+    if (Array.isArray(data)) {
+      return data.filter((item) => typeof item === 'string').join('\n');
+    }
+    if (data && typeof data === 'object') {
+      const candidates = ['prompt', 'system', 'text', 'value', 'content'];
+      for (const key of candidates) {
+        const value = data[key];
+        if (typeof value === 'string' && value.trim()) return value;
+        if (Array.isArray(value)) {
+          const joined = value.filter((item) => typeof item === 'string').join('\n');
+          if (joined.trim()) return joined;
+        }
+      }
+    }
+    return '';
+  }
+
+  function enableMaturaMode(promptText){
+    state.maturaPrompt = promptText;
+    state.maturaAvailable = true;
+    if (els.modeMaturaBtn) {
+      els.modeMaturaBtn.hidden = false;
+    }
+    setMatura(state.maturaStoredPreference, { persist: false });
+  }
+
+  function disableMaturaMode(){
+    state.maturaAvailable = false;
+    state.maturaPrompt = '';
+    setMatura(false, { persist: false });
+    if (els.modeMaturaBtn) {
+      els.modeMaturaBtn.hidden = true;
+    }
+  }
+
+  function setMatura(onOff, { persist = true } = {}){
+    const enabled = state.maturaAvailable && !!onOff;
+    state.matura = enabled;
+    if (persist && state.maturaAvailable) {
+      state.maturaStoredPreference = enabled;
+      try { localStorage.setItem('chem.matura', enabled ? '1' : '0'); } catch {}
+    }
+    updateMaturaButton();
+  }
+
+  function updateMaturaButton(){
+    const btn = els.modeMaturaBtn;
+    if (!btn) return;
+    btn.classList.toggle('selected', state.matura);
+    btn.setAttribute('aria-pressed', state.matura ? 'true' : 'false');
+    btn.disabled = state.busy || !state.maturaAvailable;
   }
 
   // ---------- Messages UI ----------
@@ -156,7 +278,7 @@ const API = {
     els.promptInput.value='';
     state.messages.push({ role:'user', content:text });
 
-    state.busy=true; setBusy(true);
+    setBusy(true);
     const assistantEl = addAssistantMessage();
 
     try{
@@ -168,15 +290,24 @@ const API = {
       console.error(err);
       updateAssistantMessage(assistantEl, `<span style="color:#b91c1c">Błąd: ${escapeHtml(err.message||'nieznany')}</span>`);
     }finally{
-      state.busy=false; setBusy(false); clearAttachment();
+      setBusy(false); clearAttachment();
     }
   }
 
-  function stopGeneration(){ if(state.aborter){ try{state.aborter.abort();}catch{} state.aborter=null; } setBusy(false); state.busy=false; }
+  function stopGeneration(){
+    if(state.aborter){
+      try { state.aborter.abort(); }
+      catch {}
+      state.aborter = null;
+    }
+    setBusy(false);
+  }
   function setBusy(b){
-    els.stopBtn.disabled=!b;
-    [els.sendBtn, els.modeMaturaBtn].forEach(x=>x.disabled=b);
+    state.busy = b;
+    if (els.stopBtn) els.stopBtn.disabled = !b;
+    if (els.sendBtn) els.sendBtn.disabled = b;
     els.promptInput.disabled = b;
+    updateMaturaButton();
   }
 
   // ---------- Backend: proxy ----------
@@ -214,8 +345,7 @@ const API = {
 
   // ---------- Matura system prompt ----------
   function getMaturaSystemPrompt(){
-    const tpl = document.querySelector('#matura-system-prompt')?.content?.textContent || '';
-    return tpl.trim();
+    return state.maturaPrompt;
   }
 
   // ---------- Markdown (lekki) ----------

@@ -111,6 +111,16 @@
         }
       };
 
+      const applySandboxToIframeTree = (root) => {
+        if (!root) return;
+        if (root.tagName === 'IFRAME') {
+          applySandboxToIframe(root);
+        }
+        if (typeof root.querySelectorAll === 'function') {
+          root.querySelectorAll('iframe').forEach(applySandboxToIframe);
+        }
+      };
+
       const ensureHostIframesSandboxed = () => {
         host.querySelectorAll('iframe').forEach(applySandboxToIframe);
       };
@@ -185,6 +195,16 @@
         });
 
         player.ready(() => {
+          applySandboxToIframeTree(player.el());
+          try {
+            const tech = player.tech(true);
+            if (tech) {
+              const techEl = typeof tech.el === 'function' ? tech.el() : tech.el;
+              applySandboxToIframeTree(techEl);
+            }
+          } catch {
+            // Tech iframe may not be ready for sandboxing yet.
+          }
           ensureHostIframesSandboxed();
           watchHostForSandboxableIframes();
         });

@@ -81,6 +81,7 @@
           <button
             id="matura-mode-btn"
             class="chip"
+            hidden
             aria-pressed="false"
             title="Odpowiadaj jak egzaminator maturalny"
           >
@@ -199,16 +200,6 @@
         </p>
       </div>
     </div>
-
-    <!-- Szablon promptu dla TRYBU MATURZYSTY (wstrzykiwany w script.js) -->
-    <template id="matura-system-prompt">
-Jesteś egzaminatorem maturalnym. Odpowiadasz zwięźle i rzeczowo, zgodnie z najnowszą formułą maturalną.
-Priorytet: jasność kryteriów, punktacja, typowe błędy.
-Jeśli użytkownik poda treść zadania, oceniaj jak na egzaminie: „Co jest poprawne/niepoprawne i dlaczego”, a na końcu daj krótką, modelową odpowiedź.
-Gdy brakuje danych – poproś tylko o to, co niezbędne.
-Unikaj długich dygresji.
-W chemii podawaj jednostki, sprawdzaj istotne cyfry, pisz równania reakcji i uzasadnienia.
-    </template>
 
     <!-- Skrypty -->
     <script defer src="./script.js?v=1"></script>
