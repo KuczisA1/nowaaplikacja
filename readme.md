@@ -1,6 +1,6 @@
 https://kuczis.netlify.app/members/module/bitpaper
 
-https://kuczis.netlify.app/members/module/chat
+https://kuczis.netlify.app/members/module/chat/?prompt=test.json
 
 https://kuczis.netlify.app/members/module/forms/?id=1YmTr2X0Fx-0T5a8CHpH0sBBz9rTzmIELo2bLnlsdd3M
 
