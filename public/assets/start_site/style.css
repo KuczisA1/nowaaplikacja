@@ -271,20 +271,31 @@ section .title::after{
     background: #111;
     content: "co oferujemy";
 }
+.services .serv-content{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 24px;
+    align-items: stretch;
+}
 .services .serv-content .card{
-    width: calc(33% - 20px);
     background: #222;
     text-align: center;
     border-radius: 6px;
     padding: 50px 25px;
     cursor: pointer;
     transition: all 0.3s ease;
+    height: 100%;
 }
 .services .serv-content .card:hover{
     background: crimson;
 }
 .services .serv-content .card .box{
     transition: all 0.3s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
 }
 .services .serv-content .card:hover .box{
     transform: scale(1.05);
@@ -301,6 +312,10 @@ section .title::after{
     font-size: 25px;
     font-weight: 500;
     margin: 10px 0 7px 0;
+}
+.services .serv-content .card p{
+    margin: 0;
+    line-height: 1.55;
 }
 
 /* skills section styling */
@@ -620,9 +635,9 @@ footer span a:hover{
     .about .about-content .right{
         flex: 100%;
     }
-    .services .serv-content .card{
-        width: calc(50% - 10px);
-        margin-bottom: 20px;
+    .services .serv-content{
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
     }
     .skills .skills-content .column,
     .contact .contact-content .column{
@@ -644,8 +659,8 @@ footer span a:hover{
     .home .home-content a{
         font-size: 20px;
     }
-    .services .serv-content .card{
-        width: 100%;
+    .services .serv-content{
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     }
 }
 
