@@ -8,7 +8,7 @@ https://kuczis.netlify.app/members/module/kalkulator
 
 https://kuczis.netlify.app/members/module/pdf/?id=1qKkDarVM8qn1GHkNalt9f8n7IXNUawZF&type=1
 
-
+https://kuczis.netlify.app/members/module/contact/?internal=wiadomosc
 
 https://kuczis.netlify.app/members/module/slides/index.html?id=1q27sAFuVxw-ILceGOdVPcaBz2nD_sC2B&type=
 
