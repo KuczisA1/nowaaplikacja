@@ -184,7 +184,7 @@
     const saveLocalSessionId = (sid) => { try { if (sid) localStorage.setItem(LOCAL_SESSION_KEY, sid); } catch {} };
     const clearLocalSessionId = () => { try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch {} };
     const ACTIVE_STATUS_VALUES = ['active', 'aktywny', 'approved', 'enabled', 'admin'];
-    const TIMED_ROLES = new Set(['hour', 'day', 'week', 'halfyear', 'year']);
+    const TIMED_ROLES = new Set(['hour', 'day', 'week', 'month', 'halfyear', 'year']);
     const parseTimestamp = (value) => {
       if (typeof value === 'number' && Number.isFinite(value)) return value;
       if (typeof value === 'string' && value.trim()) {

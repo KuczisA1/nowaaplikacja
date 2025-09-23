@@ -119,7 +119,7 @@
   };
   const isLoginPage = () => location.pathname.startsWith(LOGIN_PATH);
 
-  const TIMED_ROLE_NAMES = ['hour', 'day', 'week', 'halfyear', 'year'];
+  const TIMED_ROLE_NAMES = ['hour', 'day', 'week', 'month', 'halfyear', 'year'];
   const TIMED_ROLES = new Set(TIMED_ROLE_NAMES);
 
   const parseTimestamp = (value) => {

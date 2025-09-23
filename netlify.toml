@@ -11,7 +11,7 @@
   to = "/members/:splat"
   status = 200
   force = true
-  conditions = { Role = ["admin", "active", "hour", "day", "week", "halfyear", "year"] }
+  conditions = { Role = ["admin", "active", "hour", "day", "week", "month", "halfyear", "year"] }
 
 ## Fallback: anyone without the role gets redirected to login.
 [[redirects]]
