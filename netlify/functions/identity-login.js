@@ -105,25 +105,40 @@ exports.handler = async (event) => {
     const now = Date.now();
     let assignedAtMs = existingTimed.assignedAt;
     let expiresAtMs = existingTimed.expiresAt;
+    let grantedTimedRole = '';
 
     if (selectedTimedRole) {
       const duration = TIMED_ROLE_DURATIONS_MS[selectedTimedRole];
       const sameRole = existingTimed.role === selectedTimedRole;
-      const hasValidWindow = sameRole && assignedAtMs && expiresAtMs && expiresAtMs > now;
-      if (!hasValidWindow) {
+      const hasStoredWindow = sameRole && assignedAtMs && expiresAtMs;
+      const storedWindowValid = Boolean(hasStoredWindow && expiresAtMs > assignedAtMs);
+      const windowExpired = Boolean(storedWindowValid && expiresAtMs <= now);
+
+      // Only create a fresh window when metadata is missing or the role actually changed.
+      if (!sameRole || !storedWindowValid) {
         assignedAtMs = now;
         expiresAtMs = now + duration;
+        grantedTimedRole = selectedTimedRole;
+      } else if (windowExpired) {
+        // Expired timed access should be cleared instead of silently extending.
+        grantedTimedRole = '';
+      } else {
+        grantedTimedRole = selectedTimedRole;
       }
     } else {
       assignedAtMs = 0;
       expiresAtMs = 0;
     }
 
-    const timedActive = Boolean(selectedTimedRole && expiresAtMs && expiresAtMs > now);
+    const timedActive = Boolean(grantedTimedRole && expiresAtMs && expiresAtMs > now);
+
+    if (!timedActive) {
+      grantedTimedRole = '';
+    }
 
     let nextRoles = roles.filter((role) => !isTimedRole(role) && role !== 'active');
-    if (timedActive && selectedTimedRole) {
-      nextRoles.push(selectedTimedRole);
+    if (timedActive && grantedTimedRole) {
+      nextRoles.push(grantedTimedRole);
     }
 
     const activeInjectedNow = timedActive && !isAdmin && !statusActive && !manualActiveBefore;
@@ -143,9 +158,9 @@ exports.handler = async (event) => {
       session_id: sessionId
     };
 
-    if (selectedTimedRole) {
+    if (timedActive && grantedTimedRole) {
       responseMeta.timed_access = {
-        role: selectedTimedRole,
+        role: grantedTimedRole,
         assigned_at: formatTimestamp(assignedAtMs),
         expires_at: formatTimestamp(expiresAtMs),
         active: timedActive,
