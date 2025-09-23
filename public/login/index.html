@@ -183,9 +183,41 @@
     const LOCAL_SESSION_KEY = "chem_session_id";
     const saveLocalSessionId = (sid) => { try { if (sid) localStorage.setItem(LOCAL_SESSION_KEY, sid); } catch {} };
     const clearLocalSessionId = () => { try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch {} };
+    const ACTIVE_STATUS_VALUES = ['active', 'aktywny', 'approved', 'enabled', 'admin'];
+    const TIMED_ROLES = new Set(['hour', 'day', 'week', 'halfyear', 'year']);
+    const parseTimestamp = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Date.parse(value);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      return 0;
+    };
+    const timedAccessState = (user) => {
+      const meta = user && user.app_metadata ? user.app_metadata.timed_access : undefined;
+      const rawRole = meta && typeof meta.role === 'string' ? meta.role.trim() : '';
+      const role = rawRole && TIMED_ROLES.has(rawRole) ? rawRole : '';
+      return {
+        role,
+        expiresAt: meta ? parseTimestamp(meta.expires_at) : 0,
+        injectedActive: Boolean(meta && meta.injected_active)
+      };
+    };
+    const statusValue = (user) => {
+      const meta = user && user.app_metadata && typeof user.app_metadata.status === 'string' ? user.app_metadata.status
+        : user && user.user_metadata && typeof user.user_metadata.status === 'string' ? user.user_metadata.status
+        : '';
+      return (meta || '').trim().toLowerCase();
+    };
     const hasAccess = (user) => {
-      const roles = (user && user.app_metadata && user.app_metadata.roles) || [];
-      return roles.includes('admin') || roles.includes('active');
+      if (!user) return false;
+      const roles = (user.app_metadata && user.app_metadata.roles) || [];
+      if (roles.includes('admin')) return true;
+      if (ACTIVE_STATUS_VALUES.includes(statusValue(user))) return true;
+      const timed = timedAccessState(user);
+      if (timed.role && roles.includes(timed.role) && timed.expiresAt > Date.now()) return true;
+      if (roles.includes('active') && !timed.injectedActive) return true;
+      return false;
     };
     const setNFJwtCookie = async (user) => {
       if (!user || !hasAccess(user)) return;

@@ -119,6 +119,53 @@
   };
   const isLoginPage = () => location.pathname.startsWith(LOGIN_PATH);
 
+  const TIMED_ROLE_NAMES = ['hour', 'day', 'week', 'halfyear', 'year'];
+  const TIMED_ROLES = new Set(TIMED_ROLE_NAMES);
+
+  const parseTimestamp = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  };
+
+  const timedAccessState = (source) => {
+    const meta = source && source.app_metadata ? source.app_metadata.timed_access : undefined;
+    const rawRole = meta && typeof meta.role === 'string' ? meta.role.trim() : '';
+    const role = rawRole && TIMED_ROLES.has(rawRole) ? rawRole : '';
+    const assignedAt = meta ? parseTimestamp(meta.assigned_at) : 0;
+    const expiresAt = meta ? parseTimestamp(meta.expires_at) : 0;
+    return {
+      role,
+      assignedAt,
+      expiresAt,
+      injectedActive: Boolean(meta && meta.injected_active)
+    };
+  };
+
+  const timedAccessIsActive = (user, now = Date.now()) => {
+    if (!user) return false;
+    const state = timedAccessState(user);
+    if (!state.role) return false;
+    const roles = getRoles(user);
+    if (!Array.isArray(roles) || !roles.includes(state.role)) return false;
+    return state.expiresAt > now;
+  };
+
+  const timedAccessEqual = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    const keys = ['role', 'assigned_at', 'expires_at', 'active', 'injected_active'];
+    for (const key of keys) {
+      const va = Object.prototype.hasOwnProperty.call(a, key) ? a[key] : null;
+      const vb = Object.prototype.hasOwnProperty.call(b, key) ? b[key] : null;
+      if (va !== vb) return false;
+    }
+    return true;
+  };
+
   const getUser = () => {
     try { return ID.currentUser(); } catch { return null; }
   };
@@ -133,8 +180,19 @@
   const hasActiveRole = (roles) => Array.isArray(roles) && (roles.includes('active') || roles.includes('admin'));
 
   const isActiveUser = (user) => {
-    if (hasActiveRole(getRoles(user))) return true;
-    return isStatusActive(statusValue(user));
+    if (!user) return false;
+    const roles = getRoles(user);
+    if (Array.isArray(roles) && roles.includes('admin')) return true;
+    if (isStatusActive(statusValue(user))) return true;
+    const now = Date.now();
+    const timedState = timedAccessState(user);
+    if (timedState.role && timedState.expiresAt > now && Array.isArray(roles) && roles.includes(timedState.role)) {
+      return true;
+    }
+    if (Array.isArray(roles) && roles.includes('active') && !timedState.injectedActive) {
+      return true;
+    }
+    return false;
   };
 
   const rolesEqual = (a, b) => {
@@ -264,7 +322,38 @@
       }
     }
 
-    const active = serverRoles ? hasActiveRole(serverRoles) || isStatusActive(normalizeStatus(serverStatusRaw)) : isActiveUser(user);
+    const hasTimedField = serverUser && serverUser.app_metadata && Object.prototype.hasOwnProperty.call(serverUser.app_metadata, 'timed_access');
+    if (hasTimedField) {
+      const serverTimedMeta = serverUser.app_metadata.timed_access;
+      const appMeta = Object.assign({}, user.app_metadata || {});
+      const currentTimedMeta = appMeta.timed_access;
+      if (!timedAccessEqual(currentTimedMeta, serverTimedMeta)) {
+        if (serverTimedMeta === null || typeof serverTimedMeta === 'undefined') {
+          if (Object.prototype.hasOwnProperty.call(appMeta, 'timed_access')) delete appMeta.timed_access;
+        } else {
+          appMeta.timed_access = serverTimedMeta;
+        }
+        user.app_metadata = appMeta;
+      }
+    }
+
+    if (!hasTimedField && user && user.app_metadata && Object.prototype.hasOwnProperty.call(user.app_metadata, 'timed_access')) {
+      const appMeta = Object.assign({}, user.app_metadata);
+      delete appMeta.timed_access;
+      user.app_metadata = appMeta;
+    }
+
+    const serverTimedState = timedAccessState(serverUser);
+    const serverTimedActive = Boolean(
+      serverTimedState.role &&
+      serverTimedState.expiresAt > Date.now() &&
+      Array.isArray(serverRoles) &&
+      serverRoles.includes(serverTimedState.role)
+    );
+
+    const active = serverRoles
+      ? (hasActiveRole(serverRoles) || serverTimedActive || isStatusActive(normalizeStatus(serverStatusRaw)))
+      : isActiveUser(user);
     if (!active) {
       if (enforceLogout) await logoutAsInactive();
       return { active: false, user: null, serverUser, serverRoles: serverRoles || [] };

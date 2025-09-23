@@ -10,8 +10,5 @@
   },
   "devDependencies": {
     "netlify-cli": "^17.36.1"
-  },
-  "dependencies": {
-    "stripe": "^14.24.0"
   }
 }

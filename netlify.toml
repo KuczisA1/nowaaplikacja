@@ -11,7 +11,7 @@
   to = "/members/:splat"
   status = 200
   force = true
-  conditions = { Role = ["active"] }
+  conditions = { Role = ["admin", "active", "hour", "day", "week", "halfyear", "year"] }
 
 ## Fallback: anyone without the role gets redirected to login.
 [[redirects]]
@@ -46,8 +46,3 @@
     Cache-Control = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
     Pragma = "no-cache"
     Expires = "0"
-[[redirects]]
-  from = "/activation"
-  to = "/activation/index.html"
-  status = 200
-
