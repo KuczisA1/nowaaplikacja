@@ -16,9 +16,9 @@
     body { background: #fff; }
 
     /* Zawsze widoczny przycisk wylogowania (prawy górny róg) */
-    #logout-link {
+    #logout-link,
+    #time-link {
       position: fixed;
-      top: 14px;
       right: 14px;
       z-index: 1000;
       border: none;
@@ -26,11 +26,13 @@
       padding: 10px 14px;
       font-weight: 600;
       cursor: pointer;
-      background: #ef4444;
       color: #fff;
       box-shadow: 0 4px 18px rgba(0,0,0,.25);
     }
-    #logout-link:hover { filter: brightness(0.95); }
+    #logout-link { top: 14px; background: #ef4444; }
+    #time-link { top: 66px; background: #3b82f6; }
+    #logout-link:hover,
+    #time-link:hover { filter: brightness(0.95); }
 
     /* Pełnoekranowy, responsywny embed kursu */
     .embed-wrap { position: fixed; inset: 0; }
@@ -44,6 +46,7 @@
 <body>
   <!-- Zawsze widoczny przycisk wylogowania -->
   <button id="logout-link">Wyloguj</button>
+  <button id="time-link">Pozostały czas</button>
 
   <!-- Skalujący się na całą stronę embed kursu -->
   <div class="embed-wrap">
@@ -52,6 +55,13 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
+      const timeButton = document.getElementById('time-link');
+      if (timeButton) {
+        timeButton.addEventListener('click', () => {
+          location.href = '/time.html';
+        });
+      }
+
       if (typeof netlifyIdentity !== 'undefined') {
         try { netlifyIdentity.init(); } catch {}
         // Po wylogowaniu przenieś na stronę logowania z komunikatem
