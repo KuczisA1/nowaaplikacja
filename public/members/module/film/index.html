@@ -1,257 +1,218 @@
 <!doctype html>
 <html lang="pl">
-  <head>
-    <link rel="icon" href="/assets/icon/benzene-ring.svg" type="image/svg+xml">
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Player -ChemDisk</title>
-    <!--<meta name="x-members" content="1" />
-    <meta http-equiv="Cache-Control" content="no-store" />-->
-    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-    <script defer src="/assets/js/auth.js"></script>
-
-    <!-- Video.js CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/video.js@8/dist/video-js.min.css" rel="stylesheet" />
-
-    <style>
-      html, body { height: 100%; }
-      body { margin: 0; background: #000; overflow: hidden; }
-
-      /* Kontener trzymający player zawsze w obrębie okna */
-      #wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        background: #000;
+<head>
+  <link rel="icon" href="/assets/icon/benzene-ring.svg" type="image/svg+xml">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Player - ChemDisk</title>
+  <!--<meta name="x-members" content="1" />
+  <meta http-equiv="Cache-Control" content="no-store" />-->
+  <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+  <script defer src="/assets/js/auth.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #050505;
+      color: #f8fafc;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    body {
+      overflow: hidden;
+    }
+    .app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .message {
+      position: absolute;
+      inset: auto 50% 10% 50%;
+      transform: translateX(-50%);
+      max-width: min(92vw, 480px);
+      padding: 1rem 1.25rem;
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 12px;
+      line-height: 1.45;
+      font-size: clamp(0.95rem, 2.4vw, 1.05rem);
+      color: #fca5a5;
+      display: none;
+    }
+    .player-wrap {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      overflow: hidden;
+      display: none;
+    }
+    .player-wrap.active {
+      display: block;
+    }
+    iframe.player {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #000;
+    }
+    .shield,
+    .shield-hit,
+    .shield-bottom {
+      position: absolute;
+      pointer-events: auto;
+      background: transparent;
+      z-index: 3;
+    }
+    .shield-top {
+      top: 0;
+      left: 0;
+      right: 0;
+      height: clamp(110px, 12vh, 164px);
+    }
+    .shield-hit {
+      left: 50%;
+      transform: translateX(-50%);
+      top: clamp(48px, 9vh, 122px);
+      width: min(40vw, 420px);
+      height: clamp(26px, 5vh, 42px);
+    }
+    .shield-bottom {
+      bottom: clamp(0px, 1vh, 8px);
+      right: clamp(0px, 1vw, 12px);
+      width: clamp(56px, 10vw, 96px);
+      height: clamp(40px, 7vh, 64px);
+      pointer-events: auto;
+    }
+    noscript {
+      color: #fca5a5;
+      font-size: 1rem;
+    }
+    @media (max-width: 640px) {
+      .player-wrap {
+        border-radius: 0;
+        width: 100vw;
       }
-
-      /* Skaluje player do maksymalnego rozmiaru bez wychodzenia poza ekran */
-      .player-shell {
-        position: relative;
-        width: min(100vw, calc(100vh * 16 / 9));
-        height: min(100vh, calc(100vw * 9 / 16));
-      }
-
-      /* Maska na górę playera, by przykryć przyciski YT */
-      .player-shell::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 0;
-        height: 88px;
-        z-index: 5;
-        pointer-events: auto;
-        background: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
-      }
-
-      .player-shell .video-js,
-      .player-shell iframe {
-        width: 100%;
-        height: 100%;
-      }
-
-      .player-shell iframe {
-        border: 0;
-      }
-
-      .player-shell .video-js .vjs-tech {
-        width: 100%;
-        height: 100%;
-      }
-
-      /* Prosty overlay, gdy brak ?id= */
-      .overlay {
-        position: fixed; inset: 0;
-        display: grid; place-items: center;
-        color: #bbb; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-        text-align: center; padding: 1rem;
-      }
-      .overlay strong { color: #fff; }
-      .hidden { display: none !important; }
-    </style>
-  </head>
-  <body>
-    <div id="wrap">
-      <div id="playerHost" class="player-shell"></div>
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div id="message" class="message" role="alert"></div>
+    <div id="playerWrap" class="player-wrap" aria-live="polite" aria-busy="true">
+      <iframe id="player" class="player" title="Bezpieczny odtwarzacz" sandbox="allow-scripts allow-same-origin allow-presentation" loading="lazy"></iframe>
+      <div class="shield shield-top" aria-hidden="true"></div>
+      <div class="shield-hit" aria-hidden="true"></div>
+      <div class="shield-bottom" aria-hidden="true"></div>
     </div>
+    <noscript>Aby odtwarzacz mógł zadziałać, włącz obsługę JavaScript w przeglądarce.</noscript>
+  </div>
+  <script>
+    (function () {
+      'use strict';
 
-    <!-- Overlay z informacją, jeśli brak parametru id -->
-    <div id="hint" class="overlay hidden">
-      <div>
-        Podaj identyfikator filmu YouTube w adresie URL, np.<br/>
-        <strong>http://localhost:1234/?id=dQw4w9WgXcQ</strong>
-      </div>
-    </div>
+      const messageEl = document.getElementById('message');
+      const wrapEl = document.getElementById('playerWrap');
+      const frameEl = document.getElementById('player');
+      const bottomShield = document.querySelector('.shield-bottom');
 
-    <!-- Video.js core -->
-    <script src="https://cdn.jsdelivr.net/npm/video.js@8/dist/video.min.js"></script>
-    <!-- Wtyczka do YouTube -->
-    <script src="https://cdn.jsdelivr.net/npm/videojs-youtube@3/dist/Youtube.min.js"></script>
-
-    <script>
-      const SANDBOX_VALUE = 'allow-scripts allow-same-origin';
-
-      const hint = document.getElementById('hint');
-      const host = document.getElementById('playerHost');
-
-      let player = null;
-      let sandboxObserver = null;
-
-      const applySandboxToIframe = (iframe) => {
-        if (!iframe) return;
-        iframe.setAttribute('sandbox', SANDBOX_VALUE);
-        iframe.setAttribute('allowfullscreen', '');
-        if (!iframe.dataset.contextMenuBlocked) {
-          iframe.addEventListener('contextmenu', (event) => {
-            event.preventDefault();
-          });
-          iframe.dataset.contextMenuBlocked = '1';
+      const params = (() => {
+        try {
+          return new URLSearchParams(window.location.search);
+        } catch (err) {
+          console.error('URLSearchParams error', err);
+          return new Map();
         }
+      })();
+
+      const rawId = (params.get('id') || '').trim();
+      const rawType = (params.get('type') || '1').trim();
+
+      const sanitizeId = (value) => value.replace(/[^0-9A-Za-z_-]/g, '');
+      const mediaId = sanitizeId(rawId);
+      const type = rawType === '2' ? '2' : '1';
+
+      const showError = (msg) => {
+        if (!msg) return;
+        messageEl.textContent = msg;
+        messageEl.style.display = 'block';
+        wrapEl.classList.remove('active');
+        wrapEl.setAttribute('aria-busy', 'false');
+        frameEl.removeAttribute('src');
       };
 
-      const applySandboxToIframeTree = (root) => {
-        if (!root) return;
-        if (root.tagName === 'IFRAME') {
-          applySandboxToIframe(root);
-        }
-        if (typeof root.querySelectorAll === 'function') {
-          root.querySelectorAll('iframe').forEach(applySandboxToIframe);
-        }
-      };
+      if (!mediaId) {
+        showError('Brak prawidłowego parametru "id".');
+        return;
+      }
 
-      const ensureHostIframesSandboxed = () => {
-        host.querySelectorAll('iframe').forEach(applySandboxToIframe);
-      };
-
-      const watchHostForSandboxableIframes = () => {
-        if (sandboxObserver) return;
-        sandboxObserver = new MutationObserver(() => {
-          ensureHostIframesSandboxed();
+      const buildSrc = () => {
+        if (type === '2') {
+          return `https://drive.google.com/file/d/${encodeURIComponent(mediaId)}/preview`;
+        }
+        const base = `https://www.youtube.com/embed/${encodeURIComponent(mediaId)}`;
+        const query = new URLSearchParams({
+          rel: '0',
+          modestbranding: '1',
+          controls: '1',
+          playsinline: '1',
+          fs: '0',
+          disablekb: '1',
+          color: 'white'
         });
-        sandboxObserver.observe(host, { childList: true, subtree: true });
+        return `${base}?${query.toString()}`;
       };
 
-      const suppressContextMenu = (target) => {
-        target.addEventListener(
-          'contextmenu',
-          (event) => {
-            if (target === document || typeof target.contains !== 'function' || target.contains(event.target)) {
-              event.preventDefault();
-            }
-          },
-          { capture: true }
-        );
-      };
+      const src = buildSrc();
+      frameEl.src = src;
+      if (bottomShield) {
+        bottomShield.style.display = type === '1' ? 'block' : 'none';
+      }
+      wrapEl.classList.add('active');
+      wrapEl.setAttribute('aria-busy', 'false');
+      messageEl.textContent = '';
+      messageEl.style.display = 'none';
 
-      suppressContextMenu(document);
-      suppressContextMenu(host);
-
-      const clearQueryFromUrl = () => {
-        if (!window.location.search) return;
-        const { origin, hash } = window.location;
-        const cleanUrl = origin + (hash || '');
-        history.replaceState(null, '', cleanUrl);
-      };
-
-      const destroyCurrentPlayer = () => {
-        if (sandboxObserver) {
-          sandboxObserver.disconnect();
-          sandboxObserver = null;
+      if (window.location.search) {
+        try {
+          window.history.replaceState({}, document.title, '/');
+        } catch (err) {
+          console.warn('History replace failed', err);
         }
-        if (player) {
-          player.dispose();
-          player = null;
-        }
-        host.innerHTML = '';
-      };
+      }
 
-      const createVideoJsPlayer = (videoId) => {
-        const video = document.createElement('video');
-        video.id = 'vid1';
-        video.className = 'video-js vjs-default-skin vjs-big-play-centered';
-        video.setAttribute('controls', '');
-        video.setAttribute('playsinline', '');
-        video.setAttribute('autoplay', '');
-        video.setAttribute('muted', '');
-        host.appendChild(video);
-
-        player = videojs(video, {
-          techOrder: ['youtube'],
-          responsive: true,
-          controlBar: {
-            volumePanel: { inline: false }
-          },
-          youtube: {
-            rel: 0,
-            modestbranding: 1,
-            playsinline: 1
-          },
-          sources: [{
-            type: 'video/youtube',
-            src: `https://www.youtube.com/watch?v=${videoId}`
-          }]
-        });
-
-        player.ready(() => {
-          applySandboxToIframeTree(player.el());
-          try {
-            const tech = player.tech(true);
-            if (tech) {
-              const techEl = typeof tech.el === 'function' ? tech.el() : tech.el;
-              applySandboxToIframeTree(techEl);
-            }
-          } catch {
-            // Tech iframe may not be ready for sandboxing yet.
-          }
-          ensureHostIframesSandboxed();
-          watchHostForSandboxableIframes();
-        });
-      };
-
-      const createEmbedPlayer = (videoId) => {
-        const iframe = document.createElement('iframe');
-        iframe.className = 'yt-embed';
-        iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1`;
-        iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
-        applySandboxToIframe(iframe);
-        host.appendChild(iframe);
-        ensureHostIframesSandboxed();
-        watchHostForSandboxableIframes();
-      };
-
-      const applyStateFromUrl = () => {
-        const url = new URL(window.location.href);
-        const videoId = url.searchParams.get('id');
-        const type = url.searchParams.get('type') || '1';
-
-        destroyCurrentPlayer();
-
-        if (videoId) {
-          hint.classList.add('hidden');
-
-          if (type === '2') {
-            createEmbedPlayer(videoId);
-          } else {
-            createVideoJsPlayer(videoId);
-          }
-
-          clearQueryFromUrl();
-        } else {
-          hint.classList.remove('hidden');
-        }
-      };
-
-      applyStateFromUrl();
-
-      window.addEventListener('popstate', applyStateFromUrl);
-
-      window.addEventListener('resize', () => {
-        if (player) {
-          player.resize();
-        }
+      const blockers = ['contextmenu', 'dragstart'];
+      blockers.forEach((type) => {
+        document.addEventListener(type, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }, { capture: true });
       });
-    </script>
-  </body>
+
+      document.addEventListener('keydown', (event) => {
+        const blocked = (event.ctrlKey || event.metaKey) && ['s', 'p', 'u'].includes(event.key.toLowerCase());
+        if (blocked || event.key === 'F12') {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, { capture: true });
+
+      window.addEventListener('blur', () => {
+        try {
+          document.activeElement && document.activeElement.blur();
+        } catch (_) {}
+      });
+    })();
+  </script>
+</body>
 </html>

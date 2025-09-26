@@ -1,27 +1,22 @@
 <!doctype html>
 <html lang="pl">
 <head>
-  <link rel="icon" href="/assets/icon/benzene-ring.svg" type="image/svg+xml">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Player - ChemDisk</title>
-  <!--<meta name="x-members" content="1" />
-  <meta http-equiv="Cache-Control" content="no-store" />-->
-  <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-  <script defer src="/assets/js/auth.js"></script>
+  <title>Player YouTube – tryb bezpieczny</title>
   <style>
     :root {
       color-scheme: dark;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     }
     * {
       box-sizing: border-box;
     }
     html, body {
-      height: 100%;
       margin: 0;
-      background: #050505;
-      color: #f8fafc;
-      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      height: 100%;
+      background: radial-gradient(circle at top, #0f172a 0%, #020617 55%, #000 100%);
+      color: #e2e8f0;
     }
     body {
       overflow: hidden;
@@ -34,165 +29,483 @@
       align-items: center;
       justify-content: center;
     }
-    .message {
-      position: absolute;
-      inset: auto 50% 10% 50%;
-      transform: translateX(-50%);
-      max-width: min(92vw, 480px);
-      padding: 1rem 1.25rem;
-      background: rgba(15, 23, 42, 0.85);
-      border-radius: 12px;
-      line-height: 1.45;
-      font-size: clamp(0.95rem, 2.4vw, 1.05rem);
-      color: #fca5a5;
-      display: none;
-    }
-    .player-wrap {
+    .player-shell {
       position: relative;
       width: 100vw;
       height: 100vh;
+      max-width: 1400px;
+      max-height: 100vh;
+      aspect-ratio: 16 / 9;
       background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       overflow: hidden;
-      display: none;
+      border-radius: clamp(0px, 2vw, 28px);
+      box-shadow: 0 30px 60px rgba(15, 23, 42, 0.65);
     }
-    .player-wrap.active {
-      display: block;
+    @media (max-width: 920px) {
+      .player-shell {
+        width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+        box-shadow: none;
+      }
     }
-    iframe.player {
+    .player-frame {
       position: absolute;
       inset: 0;
-      width: 100%;
-      height: 100%;
-      border: 0;
-      background: #000;
     }
-    .shield,
-    .shield-hit,
-    .shield-bottom {
+    .guard {
       position: absolute;
+      inset: 0;
       pointer-events: auto;
-      background: transparent;
       z-index: 3;
+      background: transparent;
     }
-    .shield-top {
+    .guard-top {
       top: 0;
+      height: clamp(70px, 12vh, 140px);
       left: 0;
       right: 0;
-      height: clamp(110px, 12vh, 164px);
     }
-    .shield-hit {
-      left: 50%;
-      transform: translateX(-50%);
-      top: clamp(48px, 9vh, 122px);
-      width: min(40vw, 420px);
-      height: clamp(26px, 5vh, 42px);
+    .guard-bottom {
+      bottom: clamp(0px, 1vh, 12px);
+      right: clamp(0px, 2vw, 20px);
+      width: clamp(60px, 11vw, 110px);
+      height: clamp(40px, 8vh, 72px);
     }
-    .shield-bottom {
-      bottom: clamp(0px, 1vh, 8px);
-      right: clamp(0px, 1vw, 12px);
-      width: clamp(56px, 10vw, 96px);
-      height: clamp(40px, 7vh, 64px);
+    .guard-overlay {
+      inset: 0;
+      cursor: pointer;
+    }
+    .controls {
+      position: absolute;
+      z-index: 5;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: clamp(0.8rem, 2vw, 1.4rem) clamp(1rem, 4vw, 2.6rem);
+      display: grid;
+      gap: clamp(0.6rem, 2vw, 1.1rem);
+      background: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.65) 45%, rgba(2, 6, 23, 0.9) 100%);
       pointer-events: auto;
     }
-    noscript {
-      color: #fca5a5;
-      font-size: 1rem;
+    .progress-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
     }
-    @media (max-width: 640px) {
-      .player-wrap {
-        border-radius: 0;
-        width: 100vw;
-      }
+    .progress {
+      flex: 1;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .progress::-webkit-slider-thumb {
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+      margin-top: -4px;
+    }
+    .progress::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+    }
+    .buttons-row {
+      display: flex;
+      gap: clamp(0.6rem, 2vw, 1.4rem);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      appearance: none;
+      border: none;
+      border-radius: 999px;
+      padding: 0.55rem 1.6rem;
+      font-weight: 600;
+      background: rgba(15, 23, 42, 0.75);
+      color: #f8fafc;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      background: rgba(59, 130, 246, 0.4);
+      box-shadow: 0 6px 18px rgba(59, 130, 246, 0.28);
+    }
+    .btn:active {
+      transform: translateY(0);
+    }
+    .time-display {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.95rem;
+      min-width: 5.4rem;
+    }
+    .volume-group {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .volume {
+      width: clamp(110px, 26vw, 180px);
+      height: 4px;
+      appearance: none;
+      background: rgba(148, 163, 184, 0.3);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .volume::-webkit-slider-thumb {
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #22d3ee;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 10px rgba(34, 211, 238, 0.6);
+      margin-top: -4px;
+    }
+    .volume::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #22d3ee;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 10px rgba(34, 211, 238, 0.6);
+    }
+    .message {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      transform: translate(-50%, -50%);
+      padding: 1.2rem 1.6rem;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.92);
+      color: #fca5a5;
+      font-size: clamp(1rem, 2.6vw, 1.15rem);
+      text-align: center;
+      max-width: min(520px, 90vw);
+      box-shadow: 0 20px 60px rgba(15, 23, 42, 0.55);
+      display: none;
+      z-index: 10;
+    }
+    .hidden {
+      display: none !important;
+    }
+    noscript {
+      position: absolute;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fca5a5;
+      font-size: 0.95rem;
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <div id="message" class="message" role="alert"></div>
-    <div id="playerWrap" class="player-wrap" aria-live="polite" aria-busy="true">
-      <iframe id="player" class="player" title="Bezpieczny odtwarzacz" sandbox="allow-scripts allow-same-origin allow-presentation" loading="lazy"></iframe>
-      <div class="shield shield-top" aria-hidden="true"></div>
-      <div class="shield-hit" aria-hidden="true"></div>
-      <div class="shield-bottom" aria-hidden="true"></div>
+    <div class="player-shell" id="playerShell">
+      <div id="playerFrame" class="player-frame"></div>
+      <div class="guard guard-overlay" id="overlayGuard" aria-hidden="true"></div>
+      <div class="guard guard-top" aria-hidden="true"></div>
+      <div class="guard guard-bottom" aria-hidden="true"></div>
+      <div class="controls" id="controls">
+        <div class="progress-row">
+          <span id="timeCurrent" class="time-display">00:00</span>
+          <input id="progress" class="progress" type="range" min="0" max="1000" step="1" value="0" aria-label="Postęp odtwarzania" />
+          <span id="timeTotal" class="time-display">00:00</span>
+        </div>
+        <div class="buttons-row">
+          <button id="playBtn" class="btn" type="button" aria-label="Odtwórz / wstrzymaj">▶︎ Odtwórz</button>
+          <button id="restartBtn" class="btn" type="button" aria-label="Odtwórz od początku">↺ Restart</button>
+          <div class="volume-group">
+            <button id="muteBtn" class="btn" type="button" aria-label="Wycisz / włącz dźwięk">🔊 Dźwięk</button>
+            <input id="volume" class="volume" type="range" min="0" max="100" step="1" value="80" aria-label="Głośność" />
+          </div>
+          <button id="fullscreenBtn" class="btn" type="button" aria-label="Pełny ekran">⤢ Pełny ekran</button>
+        </div>
+      </div>
+      <div id="message" class="message" role="alert"></div>
     </div>
-    <noscript>Aby odtwarzacz mógł zadziałać, włącz obsługę JavaScript w przeglądarce.</noscript>
+    <noscript>Aby skorzystać z odtwarzacza, włącz obsługę JavaScript.</noscript>
   </div>
   <script>
     (function () {
       'use strict';
 
-      const messageEl = document.getElementById('message');
-      const wrapEl = document.getElementById('playerWrap');
-      const frameEl = document.getElementById('player');
-      const bottomShield = document.querySelector('.shield-bottom');
-
-      const params = (() => {
-        try {
-          return new URLSearchParams(window.location.search);
-        } catch (err) {
-          console.error('URLSearchParams error', err);
-          return new Map();
-        }
+      const qs = (() => {
+        try { return new URLSearchParams(window.location.search); }
+        catch (err) { console.error('URL params error', err); return new Map(); }
       })();
 
-      const rawId = (params.get('id') || '').trim();
-      const rawType = (params.get('type') || '1').trim();
+      const videoIdRaw = (qs.get('id') || '').trim();
+      const videoId = videoIdRaw.replace(/[^0-9A-Za-z_-]/g, '');
 
-      const sanitizeId = (value) => value.replace(/[^0-9A-Za-z_-]/g, '');
-      const mediaId = sanitizeId(rawId);
-      const type = rawType === '2' ? '2' : '1';
+      const shell = document.getElementById('playerShell');
+      const controls = document.getElementById('controls');
+      const overlayGuard = document.getElementById('overlayGuard');
+      const playBtn = document.getElementById('playBtn');
+      const restartBtn = document.getElementById('restartBtn');
+      const muteBtn = document.getElementById('muteBtn');
+      const fullscreenBtn = document.getElementById('fullscreenBtn');
+      const progress = document.getElementById('progress');
+      const volume = document.getElementById('volume');
+      const timeCurrent = document.getElementById('timeCurrent');
+      const timeTotal = document.getElementById('timeTotal');
+      const messageBox = document.getElementById('message');
 
-      const showError = (msg) => {
-        if (!msg) return;
-        messageEl.textContent = msg;
-        messageEl.style.display = 'block';
-        wrapEl.classList.remove('active');
-        wrapEl.setAttribute('aria-busy', 'false');
-        frameEl.removeAttribute('src');
+      let player = null;
+      let rafId = 0;
+      let apiReady = false;
+      let playerReady = false;
+      let seeking = false;
+
+      const showError = (text) => {
+        messageBox.textContent = text;
+        messageBox.style.display = 'block';
+        controls.classList.add('hidden');
       };
 
-      if (!mediaId) {
-        showError('Brak prawidłowego parametru "id".');
+      if (!videoId) {
+        showError('Podaj poprawny parametr "id" w adresie URL, np. ?id=CH50zuS8DD0');
         return;
       }
 
-      const buildSrc = () => {
-        if (type === '2') {
-          return `https://drive.google.com/file/d/${encodeURIComponent(mediaId)}/preview`;
+      if (window.location.search) {
+        try { window.history.replaceState({}, document.title, window.location.pathname); }
+        catch (err) { console.warn('History replace failed', err); }
+      }
+
+      const loadScript = (src) => new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+
+      const readyCallbacks = [];
+      const ensureApiReady = () => {
+        if (apiReady && window.YT && typeof window.YT.Player === 'function') {
+          return Promise.resolve();
         }
-        const base = `https://www.youtube.com/embed/${encodeURIComponent(mediaId)}`;
-        const query = new URLSearchParams({
-          rel: '0',
-          modestbranding: '1',
-          controls: '1',
-          playsinline: '1',
-          fs: '0',
-          disablekb: '1',
-          color: 'white'
+        return new Promise((resolve, reject) => {
+          readyCallbacks.push({ resolve, reject });
         });
-        return `${base}?${query.toString()}`;
       };
 
-      const src = buildSrc();
-      frameEl.src = src;
-      if (bottomShield) {
-        bottomShield.style.display = type === '1' ? 'block' : 'none';
-      }
-      wrapEl.classList.add('active');
-      wrapEl.setAttribute('aria-busy', 'false');
-      messageEl.textContent = '';
-      messageEl.style.display = 'none';
+      const onApiReady = () => {
+        apiReady = true;
+        readyCallbacks.splice(0).forEach(({ resolve }) => resolve());
+      };
 
-      if (window.location.search) {
-        try {
-          window.history.replaceState({}, document.title, '/');
-        } catch (err) {
-          console.warn('History replace failed', err);
+      window.onYouTubeIframeAPIReady = () => {
+        onApiReady();
+      };
+
+      loadScript('https://www.youtube.com/iframe_api').catch(() => {
+        showError('Nie udało się załadować API YouTube. Spróbuj ponownie później.');
+      });
+
+      const formatTime = (seconds) => {
+        if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+        const total = Math.floor(seconds);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        if (h > 0) {
+          return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
         }
-      }
+        return [m, s].map((v) => String(v).padStart(2, '0')).join(':');
+      };
 
-      const blockers = ['contextmenu', 'dragstart'];
-      blockers.forEach((type) => {
+      const updatePlayButton = (isPlaying) => {
+        playBtn.textContent = isPlaying ? '❚❚ Pauza' : '▶︎ Odtwórz';
+      };
+
+      const updateMuteButton = (muted) => {
+        muteBtn.textContent = muted ? '🔈 Wyciszony' : '🔊 Dźwięk';
+      };
+
+      const syncProgress = () => {
+        if (!player || !playerReady || seeking) return;
+        const duration = player.getDuration();
+        const current = player.getCurrentTime();
+        const ratio = duration ? (current / duration) : 0;
+        progress.value = Math.max(0, Math.min(1000, Math.round(ratio * 1000)));
+        timeCurrent.textContent = formatTime(current);
+        timeTotal.textContent = formatTime(duration);
+        rafId = requestAnimationFrame(syncProgress);
+      };
+
+      const startSync = () => {
+        cancelAnimationFrame(rafId);
+        syncProgress();
+      };
+
+      const stopSync = () => {
+        cancelAnimationFrame(rafId);
+      };
+
+      const createPlayer = () => {
+        if (!window.YT || typeof window.YT.Player !== 'function') {
+          showError('API YouTube jest niedostępne w tej przeglądarce.');
+          return;
+        }
+        player = new YT.Player('playerFrame', {
+          videoId,
+          height: '100%',
+          width: '100%',
+          playerVars: {
+            controls: 0,
+            disablekb: 1,
+            rel: 0,
+            fs: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            iv_load_policy: 3,
+            cc_load_policy: 0,
+            color: 'white'
+          },
+          events: {
+            onReady: (event) => {
+              playerReady = true;
+              try {
+                const iframe = player.getIframe();
+                if (iframe) {
+                  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock');
+                  iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+                  iframe.removeAttribute('allowfullscreen');
+                }
+              } catch (err) {
+                console.warn('Sandbox setup failed', err);
+              }
+              const initialVolume = volume.valueAsNumber;
+              player.setVolume(initialVolume);
+              timeTotal.textContent = formatTime(player.getDuration());
+              timeCurrent.textContent = formatTime(player.getCurrentTime());
+              controls.classList.remove('hidden');
+              updatePlayButton(false);
+              updateMuteButton(player.isMuted());
+              startSync();
+            },
+            onStateChange: (event) => {
+              if (event.data === YT.PlayerState.PLAYING) {
+                updatePlayButton(true);
+                startSync();
+              } else if (event.data === YT.PlayerState.PAUSED) {
+                updatePlayButton(false);
+                startSync();
+              } else if (event.data === YT.PlayerState.ENDED) {
+                updatePlayButton(false);
+                stopSync();
+                progress.value = 1000;
+                timeCurrent.textContent = formatTime(player.getDuration());
+              }
+            }
+          }
+        });
+      };
+
+      ensureApiReady().then(createPlayer).catch(() => {
+        showError('Nie udało się zainicjować playera YouTube.');
+      });
+
+      playBtn.addEventListener('click', () => {
+        if (!playerReady) return;
+        const state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+          player.pauseVideo();
+        } else {
+          player.playVideo();
+        }
+      });
+
+      restartBtn.addEventListener('click', () => {
+        if (!playerReady) return;
+        player.seekTo(0, true);
+        player.playVideo();
+      });
+
+      muteBtn.addEventListener('click', () => {
+        if (!playerReady) return;
+        const muted = player.isMuted();
+        if (muted) player.unMute(); else player.mute();
+        updateMuteButton(player.isMuted());
+      });
+
+      fullscreenBtn.addEventListener('click', async () => {
+        try {
+          if (document.fullscreenElement) {
+            await document.exitFullscreen();
+            fullscreenBtn.textContent = '⤢ Pełny ekran';
+          } else {
+            await shell.requestFullscreen();
+            fullscreenBtn.textContent = '⤡ Wyjdź';
+          }
+        } catch (err) {
+          console.warn('Fullscreen toggle failed', err);
+        }
+      });
+
+      document.addEventListener('fullscreenchange', () => {
+        const active = Boolean(document.fullscreenElement);
+        fullscreenBtn.textContent = active ? '⤡ Wyjdź' : '⤢ Pełny ekran';
+      });
+
+      progress.addEventListener('input', () => {
+        if (!playerReady) return;
+        seeking = true;
+        const duration = player.getDuration();
+        const fraction = progress.valueAsNumber / 1000;
+        timeCurrent.textContent = formatTime(duration * fraction);
+      });
+
+      progress.addEventListener('change', () => {
+        if (!playerReady) return;
+        const duration = player.getDuration();
+        const fraction = progress.valueAsNumber / 1000;
+        player.seekTo(duration * fraction, true);
+        seeking = false;
+        startSync();
+      });
+
+      volume.addEventListener('input', () => {
+        if (!playerReady) return;
+        const value = volume.valueAsNumber;
+        player.setVolume(value);
+        if (player.isMuted() && value > 0) {
+          player.unMute();
+        }
+        updateMuteButton(player.isMuted());
+      });
+
+      overlayGuard.addEventListener('click', () => {
+        if (!playerReady) return;
+        const state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+          player.pauseVideo();
+        } else {
+          player.playVideo();
+        }
+      });
+
+      const blockEvents = ['contextmenu', 'dragstart'];
+      blockEvents.forEach((type) => {
         document.addEventListener(type, (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -200,17 +513,21 @@
       });
 
       document.addEventListener('keydown', (event) => {
-        const blocked = (event.ctrlKey || event.metaKey) && ['s', 'p', 'u'].includes(event.key.toLowerCase());
-        if (blocked || event.key === 'F12') {
+        const key = event.key.toLowerCase();
+        const combo = event.ctrlKey || event.metaKey;
+        if (combo && ['s', 'p', 'u', 'c'].includes(key)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        if (event.key === 'F12' || (combo && event.shiftKey && key === 'i')) {
           event.preventDefault();
           event.stopPropagation();
         }
       }, { capture: true });
 
       window.addEventListener('blur', () => {
-        try {
-          document.activeElement && document.activeElement.blur();
-        } catch (_) {}
+        try { document.activeElement && document.activeElement.blur(); }
+        catch (_) {}
       });
     })();
   </script>
