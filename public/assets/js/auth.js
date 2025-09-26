@@ -432,7 +432,7 @@
     window.addEventListener('focus', rescan);
     window.addEventListener('online', rescan);
     // And periodically (lightweight) as a backup
-    setInterval(rescan, 30000);
+    // setInterval(rescan, 30000); // Wyłączony interwał okresowego odpytywania
   };
 
   const onLoginPageInit = async () => {
