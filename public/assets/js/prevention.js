@@ -1,0 +1,14 @@
+(function() {
+    function detectDevTools() {
+        const threshold = 160; // szerokość/ wysokość panelu devtools
+        const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+        const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+
+        if (widthThreshold || heightThreshold) {
+            window.location.href = "/"; // przekierowanie na hosta
+        }
+    }
+
+    // sprawdzaj co 1s
+    setInterval(detectDevTools, 1000);
+})();
