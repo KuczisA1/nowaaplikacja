@@ -83,10 +83,11 @@
       height: clamp(26px, 5vh, 42px);
     }
     .shield-bottom {
-      bottom: 0;
-      right: 0;
-      width: clamp(110px, 18vw, 220px);
-      height: clamp(70px, 14vh, 120px);
+      bottom: clamp(0px, 1vh, 8px);
+      right: clamp(0px, 1vw, 12px);
+      width: clamp(56px, 10vw, 96px);
+      height: clamp(40px, 7vh, 64px);
+      pointer-events: auto;
     }
     noscript {
       color: #fca5a5;
@@ -118,6 +119,7 @@
       const messageEl = document.getElementById('message');
       const wrapEl = document.getElementById('playerWrap');
       const frameEl = document.getElementById('player');
+      const bottomShield = document.querySelector('.shield-bottom');
 
       const params = (() => {
         try {
@@ -168,6 +170,9 @@
 
       const src = buildSrc();
       frameEl.src = src;
+      if (bottomShield) {
+        bottomShield.style.display = type === '1' ? 'block' : 'none';
+      }
       wrapEl.classList.add('active');
       wrapEl.setAttribute('aria-busy', 'false');
       messageEl.textContent = '';
