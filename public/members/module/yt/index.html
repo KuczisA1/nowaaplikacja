@@ -19,37 +19,35 @@
       font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     }
     body {
-      display: flex;
-      flex-direction: column;
+      overflow: hidden;
     }
     .app {
-      flex: 1;
+      position: relative;
+      width: 100vw;
+      height: 100vh;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1.5rem;
-      padding: clamp(1rem, 3vw, 2rem);
-      text-align: center;
     }
     .message {
-      max-width: 720px;
-      line-height: 1.5;
-      font-size: clamp(1rem, 2.8vw, 1.1rem);
-      color: #cbd5f5;
-    }
-    .message.loaded {
-      color: #a5f3fc;
+      position: absolute;
+      inset: auto 50% 10% 50%;
+      transform: translateX(-50%);
+      max-width: min(92vw, 480px);
+      padding: 1rem 1.25rem;
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 12px;
+      line-height: 1.45;
+      font-size: clamp(0.95rem, 2.4vw, 1.05rem);
+      color: #fca5a5;
+      display: none;
     }
     .player-wrap {
       position: relative;
-      width: min(100vw, 100vh * (16/9));
-      max-width: 1200px;
-      aspect-ratio: 16 / 9;
+      width: 100vw;
+      height: 100vh;
       background: #000;
-      border-radius: clamp(12px, 3vw, 18px);
       overflow: hidden;
-      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.45);
       display: none;
     }
     .player-wrap.active {
@@ -75,32 +73,6 @@
       right: 0;
       height: clamp(60px, 8vh, 86px);
     }
-    .controls {
-      display: flex;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .ctrl-btn {
-      appearance: none;
-      background: #0ea5e9;
-      border: none;
-      color: #0b1120;
-      padding: 0.65rem 1.4rem;
-      border-radius: 999px;
-      font-weight: 600;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    .ctrl-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 16px rgba(14, 165, 233, 0.25);
-    }
-    .ctrl-btn.secondary {
-      background: #1f2937;
-      color: #e0f2fe;
-    }
     noscript {
       color: #fca5a5;
       font-size: 1rem;
@@ -115,16 +87,10 @@
 </head>
 <body>
   <div class="app">
-    <div id="message" class="message">
-      Podaj parametry <code>id</code> oraz <code>type</code>, aby osadzić materiał.
-    </div>
+    <div id="message" class="message" role="alert"></div>
     <div id="playerWrap" class="player-wrap" aria-live="polite" aria-busy="true">
       <iframe id="player" class="player" title="Bezpieczny odtwarzacz" sandbox="allow-scripts allow-same-origin allow-presentation" loading="lazy"></iframe>
       <div class="shield shield-top" aria-hidden="true"></div>
-    </div>
-    <div class="controls" id="controls" hidden>
-      <button type="button" id="fullscreenBtn" class="ctrl-btn">Pełny ekran</button>
-      <button type="button" id="exitFullscreenBtn" class="ctrl-btn secondary" hidden>Wyjdź z pełnego ekranu</button>
     </div>
     <noscript>Aby odtwarzacz mógł zadziałać, włącz obsługę JavaScript w przeglądarce.</noscript>
   </div>
@@ -135,9 +101,6 @@
       const messageEl = document.getElementById('message');
       const wrapEl = document.getElementById('playerWrap');
       const frameEl = document.getElementById('player');
-      const controlsEl = document.getElementById('controls');
-      const fullscreenBtn = document.getElementById('fullscreenBtn');
-      const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
 
       const params = (() => {
         try {
@@ -155,17 +118,17 @@
       const mediaId = sanitizeId(rawId);
       const type = rawType === '2' ? '2' : '1';
 
-      const error = (msg) => {
+      const showError = (msg) => {
+        if (!msg) return;
         messageEl.textContent = msg;
-        messageEl.classList.remove('loaded');
+        messageEl.style.display = 'block';
         wrapEl.classList.remove('active');
         wrapEl.setAttribute('aria-busy', 'false');
-        controlsEl.hidden = true;
         frameEl.removeAttribute('src');
       };
 
       if (!mediaId) {
-        error('Brak prawidłowego parametru "id".');
+        showError('Brak prawidłowego parametru "id".');
         return;
       }
 
@@ -190,11 +153,8 @@
       frameEl.src = src;
       wrapEl.classList.add('active');
       wrapEl.setAttribute('aria-busy', 'false');
-      controlsEl.hidden = false;
-      messageEl.classList.add('loaded');
-      messageEl.textContent = type === '2'
-        ? 'Odtwarzanie z Dysku Google (sandboxowane)'
-        : 'Odtwarzanie z YouTube (sandboxowane)';
+      messageEl.textContent = '';
+      messageEl.style.display = 'none';
 
       if (window.location.search) {
         try {
@@ -203,44 +163,6 @@
           console.warn('History replace failed', err);
         }
       }
-
-      const enterFullscreen = async () => {
-        try {
-          if (wrapEl.requestFullscreen) {
-            await wrapEl.requestFullscreen();
-          } else if (wrapEl.webkitRequestFullscreen) {
-            wrapEl.webkitRequestFullscreen();
-          }
-        } catch (err) {
-          console.warn('Fullscreen request failed', err);
-        }
-      };
-
-      const exitFullscreen = async () => {
-        try {
-          if (document.exitFullscreen) {
-            await document.exitFullscreen();
-          } else if (document.webkitExitFullscreen) {
-            document.webkitExitFullscreen();
-          }
-        } catch (err) {
-          console.warn('Fullscreen exit failed', err);
-        }
-      };
-
-      fullscreenBtn.addEventListener('click', enterFullscreen);
-      exitFullscreenBtn.addEventListener('click', exitFullscreen);
-
-      const updateFullscreenButtons = () => {
-        const active = document.fullscreenElement === wrapEl || document.webkitFullscreenElement === wrapEl;
-        fullscreenBtn.hidden = active;
-        exitFullscreenBtn.hidden = !active;
-      };
-
-      document.addEventListener('fullscreenchange', updateFullscreenButtons);
-      document.addEventListener('webkitfullscreenchange', updateFullscreenButtons);
-
-      updateFullscreenButtons();
 
       const blockers = ['contextmenu', 'dragstart'];
       blockers.forEach((type) => {
