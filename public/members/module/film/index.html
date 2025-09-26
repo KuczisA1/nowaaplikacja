@@ -140,7 +140,7 @@
 
       const sanitizeId = (value) => value.replace(/[^0-9A-Za-z_-]/g, '');
       const mediaId = sanitizeId(rawId);
-      const type = rawType === '2' ? '2' : '1';
+      const type = ['1', '2', '3'].includes(rawType) ? rawType : '1';
 
       const showError = (msg) => {
         if (!msg) return;
@@ -159,6 +159,9 @@
       const buildSrc = () => {
         if (type === '2') {
           return `https://drive.google.com/file/d/${encodeURIComponent(mediaId)}/preview`;
+        }
+        if (type === '3') {
+          return `https://www.youtube.com/embed/${encodeURIComponent(mediaId)}`;
         }
         const base = `https://www.youtube.com/embed/${encodeURIComponent(mediaId)}`;
         const query = new URLSearchParams({
