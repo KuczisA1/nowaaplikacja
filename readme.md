@@ -32,3 +32,14 @@ https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-2.jp
 https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-3.jpeg
 https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-4.jpeg
 https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-5.jpeg
+
+logo:
+https://cdn.jsdelivr.net/gh/Kuczis-Media/logo/benzene-ring.svg
+
+internet assets:
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/assets/font-awesome.min.css
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/assets/jquery-waypoints.min.js
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/assets/jquery.min.js
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/assets/owl-carousel.min.css
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/assets/owl-carousel.min.js
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/assets/typed.min.js
