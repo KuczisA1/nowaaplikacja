@@ -9,6 +9,8 @@ const API = {
   TEMPERATURE: 0.2
 };
 
+const IMAGE_SIZE_LIMIT = 5 * 1024 * 1024; // 5 MB
+
 (() => {
   'use strict';
 
@@ -246,9 +248,28 @@ const API = {
   // ---------- Pliki ----------
   function handleFileSelect(){ const f=els.fileInput.files?.[0]||null; setAttachment(f); }
   function setAttachment(file){
-    state.attachment = file||null;
-    if(file && file.type?.startsWith('image/')){ const url=URL.createObjectURL(file); els.filePreview.src=url; els.filePreview.style.display='inline-block'; }
-    else { els.filePreview.removeAttribute('src'); els.filePreview.style.display='none'; }
+    state.attachment = null;
+
+    if(file && file.type?.startsWith('image/')){
+      if(file.size > IMAGE_SIZE_LIMIT){
+        alert('Zdjęcie może mieć maksymalnie 5 MB.');
+        if(els.fileInput) els.fileInput.value='';
+        els.filePreview.removeAttribute('src');
+        els.filePreview.style.display='none';
+        return;
+      }
+      state.attachment = file;
+      const url=URL.createObjectURL(file);
+      els.filePreview.src=url;
+      els.filePreview.style.display='inline-block';
+      return;
+    }
+
+    if(file){
+      state.attachment = file;
+    }
+    els.filePreview.removeAttribute('src');
+    els.filePreview.style.display='none';
   }
   function clearAttachment(){ state.attachment=null; if(els.fileInput) els.fileInput.value=''; els.filePreview.removeAttribute('src'); els.filePreview.style.display='none'; }
 
