@@ -21,4 +21,14 @@ https://kuczis.netlify.app/members/module/film/?id=CH50zuS8DD0&type=1
 
 
 
+landing page assets:
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/script.js
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/style.css
 
+images:
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/banner.jpg
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-1.jpeg
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-2.jpeg
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-3.jpeg
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-4.jpeg
+https://cdn.jsdelivr.net/gh/Kuczis-Media/landing-page-assets/images/profile-5.jpeg
